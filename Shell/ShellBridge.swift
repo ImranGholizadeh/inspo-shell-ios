@@ -38,7 +38,9 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         view.scrollView.contentInsetAdjustmentBehavior = .never // the page places itself by the safe-area tokens
         view.scrollView.bounces = false
         view.isOpaque = false
-        view.isInspectable = true // Safari's Web Inspector, on a development build
+        #if DEBUG
+        view.isInspectable = true // Safari's Web Inspector, on a development build only
+        #endif
         webView = view
         if let url = startURL {
             view.load(URLRequest(url: url))
