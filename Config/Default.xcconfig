@@ -1,0 +1,8 @@
+// The shell's defaults: Inspo's own tally test on the sibling site. A customer
+// lane builds with its own xcconfig (xcodebuild -xcconfig <lane>/deploy/ios.xcconfig),
+// which sets these four; nothing of a customer is in this repository.
+// (In an xcconfig // starts a comment, so a URL is written https:/$()/...)
+INSPO_URL = https:/$()/client-inspo.web.app/tally
+INSPO_APP_NAME = Inspo
+INSPO_BUNDLE_ID = com.inspoui.shell
+INSPO_URL_SCHEME = inspo
