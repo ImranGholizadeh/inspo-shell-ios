@@ -103,6 +103,19 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         webView.evaluateJavaScript(js)
     }
 
+    /// iOS ends a web view's content while the app is away when it needs
+    /// the memory (a running camera makes it likely): the view is left
+    /// empty, a black screen that answers nothing. The shell loads the page
+    /// again (owner, 2026-09-29: "Recover where it broke").
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        loaded = false
+        if webView.url != nil {
+            webView.reload()
+        } else if let url = startURL {
+            webView.load(URLRequest(url: url))
+        }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
         let waiting = pending
