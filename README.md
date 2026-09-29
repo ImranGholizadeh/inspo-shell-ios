@@ -14,7 +14,7 @@ phone has. Mobile is a mine of its own, separate from the web mine (owner,
 | a haptic (the device neuron's `haptic`) | `window.webkit.messageHandlers.inspo.postMessage({type: "haptic", mode})`, played by iOS's feedback generators |
 | the camera (the device neuron's `camera`) | grants the web view's camera to the gene's own site only; iOS asks the person once |
 | `link-opened` | a link to the app's URL scheme calls `window.inspo.linkOpened(url)` |
-| `native-library-answered` | a native library (a vendor's reader, added as a Swift package) calls `ShellBridge.shared.nativeLibraryAnswered(result)` |
+| a native library's call or event stream (a db neuron of type exotic on a `native://<library>/<name>` endpoint) | `{type: "native", id, url, data, keep, listen}` or `{type: "native", id, stop: true}`; the library's adapter (a `NativeLibrary`, registered with `NativeLibraries.shared`) answers, and the shell keeps only the fields `keep` names before calling `window.inspo.nativeAnswered(id, value)` or `nativeFailed(id, error)` |
 
 Calls made before the page is ready wait in `window.inspoWaiting`; the page's
 `app.js` takes them in order.
@@ -31,6 +31,10 @@ lane builds with its own xcconfig, which sets `INSPO_URL` (written
       -project Shell.xcodeproj -scheme Shell -sdk iphonesimulator \
       -destination 'platform=iOS Simulator,name=iPhone 17' \
       -xcconfig <lane>/deploy/ios.xcconfig build
+
+A test build may set `INSPO_NATIVE_STAND_IN` to a library's name (`id-reader`):
+`StandInReader` then stands in for it, with made-up results played one per
+press of either volume button, so a gene's scan flow runs with no device.
 
 For a phone, open `Shell.xcodeproj` in Xcode, choose the team, and run; for
 TestFlight, Product > Archive, then Distribute to App Store Connect.

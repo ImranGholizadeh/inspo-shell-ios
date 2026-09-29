@@ -4,6 +4,8 @@
 <dict>
 	<key>InspoURL</key>
 	<string>$(INSPO_URL)</string>
+	<key>InspoNativeStandIn</key>
+	<string>$(INSPO_NATIVE_STAND_IN)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

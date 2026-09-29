@@ -6,3 +6,6 @@ INSPO_URL = https:/$()/client-inspo.web.app/tally
 INSPO_APP_NAME = Inspo
 INSPO_BUNDLE_ID = com.inspoui.shell
 INSPO_URL_SCHEME = inspo
+// A test build's stand-in for a native library (E42): the library's name
+// (id-reader) puts StandInReader in its place; empty, none.
+INSPO_NATIVE_STAND_IN =

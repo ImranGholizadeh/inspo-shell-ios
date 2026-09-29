@@ -6,10 +6,11 @@ import UIKit
 import WebKit
 
 // The web view and its bridge. The page (inspo-core-js) talks to the shell
-// through window.webkit.messageHandlers.inspo ({type: "haptic", mode}); the
-// shell talks to the page through window.inspo, which the page's app.js
-// sets (linkOpened, nativeLibraryAnswered), and what arrives before the page
-// is ready waits in window.inspoWaiting.
+// through window.webkit.messageHandlers.inspo ({type: "haptic", mode}, and
+// {type: "native", ...}: a native library's call or stream, NativeLibrary.swift);
+// the shell talks to the page through window.inspo, which the page sets
+// (linkOpened, nativeAnswered, nativeFailed), and what arrives before the
+// page is ready waits in window.inspoWaiting.
 final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     static let shared = ShellBridge()
     private(set) weak var webView: WKWebView?
@@ -22,6 +23,10 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     }
 
     func makeWebView() -> WKWebView {
+        // a test build's stand-in for a native library (E42), in its place
+        if let standIn = StandInReader.fromBuild() {
+            NativeLibraries.shared.register(standIn)
+        }
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true // a camera's picture plays in its molecule
         config.mediaTypesRequiringUserActionForPlayback = []
@@ -48,6 +53,10 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         switch type {
         case "haptic":
             playHaptic(body["mode"] as? String ?? "")
+        case "native":
+            NativeLibraries.shared.handle(body,
+                answered: { [weak self] id, value in self?.call("nativeAnswered", id, value) },
+                failed: { [weak self] id, error in self?.call("nativeFailed", id, error) })
         default:
             break
         }
@@ -83,19 +92,13 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         call("linkOpened", url.absoluteString)
     }
 
-    /// A native library's answer (a vendor's reader, added as a Swift
-    /// package, calls this with its result): the page's
-    /// native-library-answered trigger. The result must be JSON-shaped.
-    func nativeLibraryAnswered(_ result: Any) {
-        call("nativeLibraryAnswered", result)
-    }
-
-    private func call(_ hook: String, _ value: Any) {
-        guard JSONSerialization.isValidJSONObject([value]),
-              let data = try? JSONSerialization.data(withJSONObject: [value]),
-              let list = String(data: data, encoding: .utf8) else { return }
-        let arg = String(list.dropFirst().dropLast()) // the value as JSON
-        let js = "(function(h,v){var i=window.inspo;if(i&&i[h]){i[h](v)}else{(window.inspoWaiting=window.inspoWaiting||[]).push([h,v])}})(\"\(hook)\",\(arg))"
+    /// Calls one of the page's hooks with JSON-shaped values; before the
+    /// page is ready the call waits, in order.
+    private func call(_ hook: String, _ values: Any...) {
+        guard JSONSerialization.isValidJSONObject(values),
+              let data = try? JSONSerialization.data(withJSONObject: values),
+              let args = String(data: data, encoding: .utf8) else { return }
+        let js = "(function(h,a){var i=window.inspo;if(i&&i[h]){i[h].apply(null,a)}else{(window.inspoWaiting=window.inspoWaiting||[]).push([h].concat(a))}})(\"\(hook)\",\(args))"
         guard loaded, let webView else {
             pending.append(js)
             return
@@ -109,11 +112,17 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// again (owner, 2026-09-29: "Recover where it broke").
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
+        NativeLibraries.shared.stopAll() // the page that asked is gone
         if webView.url != nil {
             webView.reload()
         } else if let url = startURL {
             webView.load(URLRequest(url: url))
         }
+    }
+
+    /// A page loading afresh: the streams the page before asked for end.
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        NativeLibraries.shared.stopAll()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
