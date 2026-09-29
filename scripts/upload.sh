@@ -4,8 +4,10 @@
 # The newest archive archive.sh made for a lane is used when none is named.
 # Usage: scripts/upload.sh [<path to .xcarchive>]
 set -eu
-archive=${1:-$(ls -dt "$HOME"/Library/Developer/Xcode/Archives/*/*.xcarchive | while read -r a; do
-  case "$(basename "$a")" in Shell*) ;; *) echo "$a"; break;; esac; done)}
+newest_lane_archive() {
+  ls -dt "$HOME"/Library/Developer/Xcode/Archives/*/*.xcarchive | grep -v '/Shell[^/]*\.xcarchive$' | head -1
+}
+if [ $# -ge 1 ]; then archive=$1; else archive=$(newest_lane_archive); fi
 test -d "$archive" || { echo "no archive: $archive"; exit 1; }
 info="$archive/Info.plist"
 bundle=$(plutil -extract ApplicationProperties.CFBundleIdentifier raw "$info")
