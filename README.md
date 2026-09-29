@@ -36,5 +36,10 @@ A test build may set `INSPO_NATIVE_STAND_IN` to a library's name (`id-reader`):
 `StandInReader` then stands in for it, with made-up results played one per
 press of either volume button, so a gene's scan flow runs with no device.
 
+To upload a lane's build: `scripts/archive.sh <lane xcconfig>`, then
+`scripts/upload.sh` (the newest lane archive, or one named), which sends it
+to App Store Connect with its team's signing, no Organizer needed. An archive
+made from Xcode's Product > Archive carries the shell's defaults, not a lane's.
+
 For a phone, open `Shell.xcodeproj` in Xcode, choose the team, and run; for
 TestFlight, Product > Archive, then Distribute to App Store Connect.
