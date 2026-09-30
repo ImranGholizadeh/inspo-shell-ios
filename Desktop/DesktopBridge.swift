@@ -20,6 +20,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         let config = WKWebViewConfiguration()
         config.applicationNameForUserAgent = "InspoDesktop/1"
         config.userContentController.add(self, name: "inspo")
+        // the title bar the page runs under, as the safe area the host
+        // covers: the renderer reads window.inspoSafeArea beside the
+        // browser's own insets, and Go offers it as safe-area-top
+        let titleBar = NSWindow.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled]).height - 100
+        config.userContentController.addUserScript(WKUserScript(
+            source: "window.inspoSafeArea = { top: \(Int(titleBar.rounded())) };",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = self
         view.setValue(false, forKey: "drawsBackground")

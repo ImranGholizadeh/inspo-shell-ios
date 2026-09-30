@@ -18,7 +18,11 @@ struct DesktopApp: App {
         WindowGroup {
             Group {
                 if let url = engine.pageURL {
-                    DesktopView(url: url)
+                    // the page runs under the title bar, as Finder's and
+                    // Music's do (owner, 2026-09-30: "Page runs under it");
+                    // the traffic lights float over it, and the page is told
+                    // the bar's height as its safe area (DesktopBridge)
+                    DesktopView(url: url).ignoresSafeArea()
                 } else {
                     EngineStatusView(status: engine.status)
                 }
