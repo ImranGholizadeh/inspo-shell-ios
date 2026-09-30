@@ -9,6 +9,8 @@
 /* Begin PBXFileReference section */
 		1A0000000000000000000001 /* Shell.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Shell.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000002 /* Default.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Default.xcconfig; sourceTree = "<group>"; };
+		1A0000000000000000000101 /* Inspo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Inspo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000000000000000000102 /* Desktop.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Desktop.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -19,6 +21,24 @@
 			);
 			target = 1A0000000000000000000010 /* Shell */;
 		};
+		1A0000000000000000000120 /* Exceptions for "Desktop" folder in "Desktop" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1A0000000000000000000110 /* Desktop */;
+		};
+		1A0000000000000000000121 /* Exceptions for "Shell" folder in "Desktop" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+				Info.plist,
+				ShellApp.swift,
+				ShellBridge.swift,
+				StandInReader.swift,
+			);
+			target = 1A0000000000000000000110 /* Desktop */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -26,13 +46,29 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				1A0000000000000000000020 /* Exceptions for "Shell" folder in "Shell" target */,
+				1A0000000000000000000121 /* Exceptions for "Shell" folder in "Desktop" target */,
 			);
 			path = Shell;
+			sourceTree = "<group>";
+		};
+		1A0000000000000000000103 /* Desktop */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1A0000000000000000000120 /* Exceptions for "Desktop" folder in "Desktop" target */,
+			);
+			path = Desktop;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		1A0000000000000000000111 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		1A0000000000000000000011 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -47,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000000000000000000003 /* Shell */,
+				1A0000000000000000000103 /* Desktop */,
 				1A0000000000000000000006 /* Config */,
 				1A0000000000000000000005 /* Products */,
 			);
@@ -56,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000000000000000000001 /* Shell.app */,
+				1A0000000000000000000101 /* Inspo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000000000000000000002 /* Default.xcconfig */,
+				1A0000000000000000000102 /* Desktop.xcconfig */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -71,6 +110,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1A0000000000000000000110 /* Desktop */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A0000000000000000000141 /* Build configuration list for PBXNativeTarget "Desktop" */;
+			buildPhases = (
+				1A0000000000000000000112 /* Sources */,
+				1A0000000000000000000111 /* Frameworks */,
+				1A0000000000000000000113 /* Resources */,
+				1A0000000000000000000114 /* Bundle the engine */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1A0000000000000000000103 /* Desktop */,
+				1A0000000000000000000003 /* Shell */,
+			);
+			name = Desktop;
+			productName = Inspo;
+			productReference = 1A0000000000000000000101 /* Inspo.app */;
+			productType = "com.apple.product-type.application";
+		};
 		1A0000000000000000000010 /* Shell */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1A0000000000000000000041 /* Build configuration list for PBXNativeTarget "Shell" */;
@@ -116,11 +177,19 @@
 			projectRoot = "";
 			targets = (
 				1A0000000000000000000010 /* Shell */,
+				1A0000000000000000000110 /* Desktop */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		1A0000000000000000000113 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		1A0000000000000000000013 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -130,7 +199,32 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		1A0000000000000000000114 /* Bundle the engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle the engine";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/scripts/bundle-engine.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		1A0000000000000000000112 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		1A0000000000000000000012 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -141,6 +235,62 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		1A0000000000000000000152 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000102 /* Desktop.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JX6XLUJKLY;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Desktop/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Inspo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(INSPO_DESKTOP_BUNDLE_ID)";
+				PRODUCT_NAME = Inspo;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1A0000000000000000000153 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0000000000000000000102 /* Desktop.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JX6XLUJKLY;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Desktop/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Inspo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(INSPO_DESKTOP_BUNDLE_ID)";
+				PRODUCT_NAME = Inspo;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		1A0000000000000000000050 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 1A0000000000000000000002 /* Default.xcconfig */;
@@ -227,6 +377,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1A0000000000000000000141 /* Build configuration list for PBXNativeTarget "Desktop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000000000000000000152 /* Debug */,
+				1A0000000000000000000153 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		1A0000000000000000000040 /* Build configuration list for PBXProject "Shell" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

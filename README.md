@@ -43,3 +43,21 @@ made from Xcode's Product > Archive carries the shell's defaults, not a lane's.
 
 For a phone, open `Shell.xcodeproj` in Xcode, choose the team, and run; for
 TestFlight, Product > Archive, then Distribute to App Store Connect.
+
+## The Inspo desktop app (the Desktop target)
+
+The desktop app (owner, 2026-09-30: the top priority outside client work;
+"macOS target in inspo-shell-ios", "The audit binary as a helper"): a window
+with one web view, and the Go engine inside the app. Its build phase
+(`scripts/bundle-engine.sh`) builds `audit` from audit-runner for this Mac
+and copies the built renderer from inspo-core-js into
+`Inspo.app/Contents/Resources/engine`, with the pages in
+`Config/desktop-pages/`. At launch the app starts `audit mine-serve` on a
+free loopback port, serving that page to its own web view; the engine reads
+`INSPO_DESKTOP_READ` in `INSPO_DESKTOP_PROJECT` with the person's own gcloud
+sign-in, and stops when the app quits. It opens the p viewer first
+(`Config/Desktop.xcconfig`). `NativeLibrary.swift` is shared with the iOS
+shell; a haptic plays on the trackpad.
+
+    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+      -project Shell.xcodeproj -scheme Desktop -configuration Debug build
