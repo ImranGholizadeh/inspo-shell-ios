@@ -4,7 +4,16 @@
 // gcloud sign-in, and opens the page Config/desktop-pages/<INSPO_DESKTOP_PAGE>.json.
 INSPO_DESKTOP_PROJECT = inspo-core
 INSPO_DESKTOP_READ = dumps
-INSPO_DESKTOP_PAGE = viewer
+INSPO_DESKTOP_PAGE = editor
+// Developing a gene on this Mac with no cloud (owner, 2026-09-30, thread 18:
+// the editor round runs in dev-serve and the desktop app): when
+// INSPO_DESKTOP_DEV_GENE names a build-prompt folder, the app runs
+// audit dev-serve on it instead of mine-serve, with the Inspo-held gene
+// states and the test accounts named here. Empty: mine-serve, as before
+// (INSPO_DESKTOP_PAGE = viewer opens the p viewer on dumps).
+INSPO_DESKTOP_DEV_GENE = $(HOME)/Desktop/claude/inspo-context/briefs/editor/build-prompt-r1-current
+INSPO_DESKTOP_DEV_STATES = $(HOME)/Desktop/claude/inspo-context/runs/editor/dev-states
+INSPO_DESKTOP_DEV_ACCOUNTS = $(HOME)/Desktop/claude/inspo-context/briefs/editor/dev-accounts.json
 INSPO_DESKTOP_BUNDLE_ID = com.inspoui.desktop
 INSPO_AUDIT_RUNNER = $(HOME)/Desktop/GitHub/audit-runner
 INSPO_CORE_JS = $(HOME)/Desktop/GitHub/inspo-core-js/inspo-core

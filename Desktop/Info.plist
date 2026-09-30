@@ -8,6 +8,12 @@
 	<string>$(INSPO_DESKTOP_READ)</string>
 	<key>InspoPage</key>
 	<string>$(INSPO_DESKTOP_PAGE)</string>
+	<key>InspoDevGene</key>
+	<string>$(INSPO_DESKTOP_DEV_GENE)</string>
+	<key>InspoDevStates</key>
+	<string>$(INSPO_DESKTOP_DEV_STATES)</string>
+	<key>InspoDevAccounts</key>
+	<string>$(INSPO_DESKTOP_DEV_ACCOUNTS)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

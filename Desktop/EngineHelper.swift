@@ -34,11 +34,22 @@ final class EngineHelper: ObservableObject {
             return
         }
         let page = setting("InspoPage").isEmpty ? "viewer" : setting("InspoPage")
-        var args = ["mine-serve", "--project", setting("InspoProject"), "--no-records",
-                    "--client", res.appendingPathComponent("client").path,
-                    "--page", "/=" + res.appendingPathComponent("pages/\(page).json").path,
-                    "--addr", "127.0.0.1:\(port)"]
-        for db in setting("InspoRead").split(separator: " ") { args += ["--read", String(db)] }
+        let client = ["--client", res.appendingPathComponent("client").path,
+                      "--page", "/=" + res.appendingPathComponent("pages/\(page).json").path,
+                      "--addr", "127.0.0.1:\(port)"]
+        var args: [String]
+        let devGene = setting("InspoDevGene")
+        if !devGene.isEmpty {
+            // a gene in development on this Mac: dev-serve, no cloud, with
+            // the local auth stand-in, its test accounts and the gene states
+            // the grid lists
+            args = ["dev-serve", "--gene", devGene] + client
+            if !setting("InspoDevAccounts").isEmpty { args += ["--accounts", setting("InspoDevAccounts")] }
+            if !setting("InspoDevStates").isEmpty { args += ["--states", setting("InspoDevStates")] }
+        } else {
+            args = ["mine-serve", "--project", setting("InspoProject"), "--no-records"] + client
+            for db in setting("InspoRead").split(separator: " ") { args += ["--read", String(db)] }
+        }
         let p = Process()
         p.executableURL = audit
         p.arguments = args

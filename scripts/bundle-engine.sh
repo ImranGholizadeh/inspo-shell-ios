@@ -10,9 +10,8 @@ mkdir -p "$out/pages"
 export PATH="/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 export GOCACHE="${GOCACHE:-$HOME/Library/Caches/go-build}"
 (cd "${INSPO_AUDIT_RUNNER:?}" && go build -trimpath -o "$out/audit" ./cmd/audit)
-if [ ! -f "${INSPO_CORE_JS:?}/dist/client/index.html" ]; then
-  (cd "$INSPO_CORE_JS" && npm run build >/dev/null)
-fi
+# always built: an old dist would ship a renderer behind the engine
+(cd "${INSPO_CORE_JS:?}" && npm run build >/dev/null)
 rm -rf "$out/client" && cp -R "$INSPO_CORE_JS/dist/client" "$out/client"
 cp "${SRCROOT:?}/Config/desktop-pages/"*.json "$out/pages/"
 echo "engine bundled: $(du -sh "$out" | cut -f1)"
