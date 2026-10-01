@@ -3,8 +3,8 @@
 
 import Foundation
 
-// A native library the shell carries (a vendor's ID reader, added as a
-// Swift package with an adapter) is an API the gene reaches through the
+// A native library the shell carries (a vendor's Bluetooth ID scanner,
+// through its adapter, IDScanner.swift) is an API the gene reaches through the
 // exotic bridge (owner, 2026-09-30, E40: "Like an exotic agent"): each call
 // and each event stream is an endpoint document, native://<library>/<name>,
 // and the page hands the shell one request per call or stream:

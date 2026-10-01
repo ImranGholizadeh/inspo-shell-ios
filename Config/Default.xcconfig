@@ -9,3 +9,7 @@ INSPO_URL_SCHEME = inspo
 // A test build's stand-in for a native library (E42): the library's name
 // (id-reader) puts StandInReader in its place; empty, none.
 INSPO_NATIVE_STAND_IN =
+// The Bluetooth ID scanner a customer build links (E47): the library's name
+// in its urls (id-reader). Empty here: the vendor's package is never in this
+// repository; a customer build compiles it with Bindings/ and sets this.
+INSPO_ID_SCANNER =

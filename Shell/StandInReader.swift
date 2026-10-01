@@ -4,63 +4,95 @@
 import AVFoundation
 import UIKit
 
-// A stand-in for a native library, for tests without the device (owner,
-// 2026-09-30, E42: "Shell stand-in + Go tests"): a build whose
-// INSPO_NATIVE_STAND_IN names a library (id-reader) carries this in its
-// place, behind the same protocol and path, so the gene's records run
-// unchanged. Its calls succeed (a state call answers connected; a feedback
-// call plays a light haptic), and a stream reports connected, then one
-// scripted result per press of either volume button (owner: "simulate
-// scans using maybe the side button on the phone"; iOS lets an app hear the
-// volume buttons, never the side button). The script is made-up people
-// only, never a real ID.
+// A stand-in for the Bluetooth ID scanner, for tests without the device
+// (owner, 2026-09-30, E42: "Shell stand-in + Go tests"): a build whose
+// INSPO_NATIVE_STAND_IN names the library (id-reader) carries this in the
+// scanner's place, behind the same surface (BluetoothIDScanner) and the
+// same adapter (IDScannerAdapter, E47), so its answers take the shape the
+// device's do and the gene's records run unchanged. Its calls succeed (the
+// state is connected; a feedback plays a haptic on the phone), and each
+// press of either volume button plays the next event of the script to the
+// stream, in turn (owner: "simulate scans using maybe the side button on
+// the phone"; iOS lets an app hear the volume buttons, never the side
+// button). The script is made-up people only, never a real ID; its dates
+// are counted from today, so the ages and expiries never go stale.
 
-final class StandInReader: NSObject, NativeLibrary {
-    let name: String
+final class StandInReader: NSObject, BluetoothIDScanner {
     private var next = 0
-    private var listeners: [UUID: ([String: Any]) -> Void] = [:]
+    private var listeners: [UUID: (ScannerLibraryEvent) -> Void] = [:]
     private var observation: NSKeyValueObservation?
+    private var battery = 90
 
-    /// The results a press plays, in turn: every kind a reader answers.
-    static let script: [[String: Any]] = [
-        ["kind": "read", "fullName": "Test Person One", "dateOfBirth": "1990-04-12", "expirationDate": "2030-04-12",
-         "issuingState": "GA", "age": 36, "isOver21": true, "isExpired": false],
-        ["kind": "failedRead"],
-        ["kind": "read", "fullName": "Test Person Two", "dateOfBirth": "2008-01-02", "expirationDate": "2031-01-02",
-         "issuingState": "NY", "age": 18, "isOver21": false, "isExpired": false],
-        ["kind": "read", "fullName": "Test Person Three", "dateOfBirth": "1985-07-30", "expirationDate": "2024-07-30",
-         "issuingState": "FL", "age": 41, "isOver21": true, "isExpired": true],
-        ["kind": "failedValidation"],
-    ]
-
-    init(name: String) {
-        self.name = name
+    /// The events a press plays, in turn: every kind the stream carries,
+    /// and a failed validation for each issue the policy checks.
+    static func script(today: Date = Date()) -> [ScannerLibraryEvent] {
+        let calendar = Calendar(identifier: .gregorian)
+        let format = DateFormatter()
+        format.calendar = calendar
+        format.locale = Locale(identifier: "en_US_POSIX")
+        format.dateFormat = "yyyy-MM-dd"
+        func holder(_ name: String, age: Int, expiresIn years: Int) -> ScannerHolder {
+            let born = calendar.date(byAdding: DateComponents(year: -age, day: -30), to: today) ?? today
+            let expires = calendar.date(byAdding: DateComponents(year: years, day: years < 0 ? -30 : 0), to: today) ?? today
+            return ScannerHolder(fullName: name, dateOfBirth: format.string(from: born),
+                                 expirationDate: format.string(from: expires),
+                                 isOver21: age >= 21, isExpired: years < 0)
+        }
+        let over21 = holder("Test Person One", age: 36, expiresIn: 4)
+        return [
+            .result(ScannerResult(kind: .read, holder: over21, issueCodes: [])),
+            .duplicate(ScannerResult(kind: .read, holder: over21, issueCodes: [])),
+            .result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"])),
+            .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Two", age: 18, expiresIn: 5),
+                                  issueCodes: ["UNDER_MINIMUM_AGE"])),
+            .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Three", age: 41, expiresIn: -1),
+                                  issueCodes: ["EXPIRED"])),
+            .result(ScannerResult(kind: .failedValidation, holder: nil, issueCodes: ["NOT_AAMVA"])),
+            .battery(15),
+            .connection("reconnecting"),
+        ]
     }
 
-    /// The stand-in the build names, if any.
-    static func fromBuild() -> StandInReader? {
+    override init() {
+        super.init()
+    }
+
+    /// The stand-in the build names, in the adapter, if any.
+    static func fromBuild() -> NativeLibrary? {
         guard let name = Bundle.main.object(forInfoDictionaryKey: "InspoNativeStandIn") as? String,
               !name.isEmpty else { return nil }
-        return StandInReader(name: name)
+        return IDScannerAdapter(name: name, scanner: StandInReader())
     }
 
-    func call(_ call: String, data: Any?, answer: @escaping (Result<[String: Any], NativeError>) -> Void) {
-        switch call {
-        case "state", "status":
-            answer(.success(["kind": "state", "state": "connected", "battery": 90]))
-        case "feedback":
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            answer(.success([:]))
-        default:
-            answer(.success([:]))
-        }
+    // MARK: BluetoothIDScanner
+
+    func configure(_ policy: ScannerPolicy) throws {}
+
+    private(set) var connection = ScannerConnection(state: "connected", deviceID: "stand-in")
+
+    var batteryPercent: Int? { battery }
+
+    var pairedDeviceIDs: [String] { ["stand-in"] }
+
+    func feedback(_ kind: ScannerFeedback, done: @escaping (Error?) -> Void) {
+        UINotificationFeedbackGenerator().notificationOccurred(kind == .success ? .success : .error)
+        done(nil)
     }
 
-    func listen(_ events: String, data: Any?, each: @escaping ([String: Any]) -> Void,
-                failed: @escaping (NativeError) -> Void) -> () -> Void {
+    func connect(_ deviceID: String, done: @escaping (Error?) -> Void) {
+        emit(.connection("connected"))
+        done(nil)
+    }
+
+    func forget(_ deviceID: String, done: @escaping (Error?) -> Void) {
+        done(nil)
+    }
+
+    func becameActive() {}
+
+    func listen(_ each: @escaping (ScannerLibraryEvent) -> Void) -> () -> Void {
         let key = UUID()
         listeners[key] = each
-        each(["kind": "state", "state": "connected"])
         followVolume()
         return { [weak self] in
             self?.listeners.removeValue(forKey: key)
@@ -70,7 +102,9 @@ final class StandInReader: NSObject, NativeLibrary {
         }
     }
 
-    /// Either volume button plays the next result to every stream.
+    // MARK: the volume buttons
+
+    /// Either volume button plays the next event to every listener.
     private func followVolume() {
         guard observation == nil else { return }
         let audio = AVAudioSession.sharedInstance()
@@ -81,9 +115,26 @@ final class StandInReader: NSObject, NativeLibrary {
         }
     }
 
-    private func press() {
-        let result = Self.script[next % Self.script.count]
+    /// Plays the script's next event; the stream's own test hook too.
+    func press() {
+        let script = Self.script()
+        let event = script[next % script.count]
         next += 1
-        listeners.values.forEach { $0(result) }
+        emit(event)
+        if case .connection = event {
+            // a dropped link comes back, as the package's reconnection does
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.emit(.connection("connected"))
+            }
+        }
+    }
+
+    private func emit(_ event: ScannerLibraryEvent) {
+        switch event {
+        case .connection(let state): connection.state = state
+        case .battery(let percent): battery = percent
+        default: break
+        }
+        listeners.values.forEach { $0(event) }
     }
 }

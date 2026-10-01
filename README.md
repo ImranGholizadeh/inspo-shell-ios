@@ -33,8 +33,33 @@ lane builds with its own xcconfig, which sets `INSPO_URL` (written
       -xcconfig <lane>/deploy/ios.xcconfig build
 
 A test build may set `INSPO_NATIVE_STAND_IN` to a library's name (`id-reader`):
-`StandInReader` then stands in for it, with made-up results played one per
-press of either volume button, so a gene's scan flow runs with no device.
+`StandInReader` then stands in for the Bluetooth ID scanner, with made-up
+events played one per press of either volume button, so a gene's scan flow
+runs with no device.
+
+## The Bluetooth ID scanner (E47)
+
+`Shell/IDScanner.swift` is the adapter that maps a vendor's Bluetooth ID
+scanner package onto a gene's endpoint documents. It is written against
+`BluetoothIDScanner`, the scanner's surface in plain terms; the vendor's
+package is never in this repository. A customer build compiles the package
+with `Bindings/VendorIDScanner.swift` (in no target here) and sets
+`INSPO_ID_SCANNER` to the library's name in its urls; the shell finds the
+binding by its Objective-C name and registers the adapter. The stand-in
+conforms to the same surface, so its answers take the same shape.
+
+| Endpoint (`native://<library>/<name>`) | What the adapter does |
+|---|---|
+| `state` (call) | `{kind: "state", state, battery}` from the package's connection status and battery |
+| `feedback` (call, data `accept`, `deny` or `error`, or `{pattern}`) | accept plays the package's success feedback; deny and error its error feedback |
+| `start-reading`, `stop-reading` (calls) | subscribe and unsubscribe the package's result listener |
+| `reconnect`, `forget` (calls) | connect again to, or forget, the paired scanner the package's status names |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue), `duplicate`, `state` (`state`), `battery` (`battery`) |
+
+The adapter configures the package once, on first use: its age and expiry
+checks on, its duplicate window as delivered, reporting off the phone never
+configured. Nothing but the fields above leaves the adapter, and the shell
+keeps only those the endpoint's `keep` names.
 
 To upload a lane's build: `scripts/archive.sh <lane xcconfig>`, then
 `scripts/upload.sh` (the newest lane archive, or one named), which sends it

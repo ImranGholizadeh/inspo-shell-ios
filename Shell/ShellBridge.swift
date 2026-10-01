@@ -23,11 +23,21 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     }
 
     func makeWebView() -> WKWebView {
-        // a test build's stand-in for a native library (E42), in its place
+        // the Bluetooth ID scanner a customer build links (E47), under the
+        // library name its xcconfig gives; a test build's stand-in (E42)
+        // takes the same name in its place
+        let scanner = Bundle.main.object(forInfoDictionaryKey: "InspoIDScanner") as? String ?? ""
+        if let linked = IDScannerAdapter.linked(name: scanner) {
+            NativeLibraries.shared.register(linked)
+        }
         if let standIn = StandInReader.fromBuild() {
             NativeLibraries.shared.register(standIn)
         }
         let config = WKWebViewConfiguration()
+        // the app's own persistent store: cookies, localStorage and
+        // IndexedDB (where Firebase Auth keeps who signed in) outlive the
+        // app's close, a force-quit at once after a write included (E53)
+        config.websiteDataStore = .default()
         config.allowsInlineMediaPlayback = true // a camera's picture plays in its molecule
         config.mediaTypesRequiringUserActionForPlayback = []
         config.applicationNameForUserAgent = "InspoShell/1"
