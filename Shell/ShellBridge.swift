@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Imran Gholizadeh, doing business as Inspo. All rights reserved.
 // Proprietary and confidential.
 
+import IDScannerBinding
 import SwiftUI
 import UIKit
 import WebKit
@@ -23,11 +24,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     }
 
     func makeWebView() -> WKWebView {
-        // the Bluetooth ID scanner a customer build links (E47), under the
-        // library name its xcconfig gives; a test build's stand-in (E42)
+        // the Bluetooth ID scanner a customer's workspace links (E47), under
+        // the library name its xcconfig gives; a test build's stand-in (E42)
         // takes the same name in its place
         let scanner = Bundle.main.object(forInfoDictionaryKey: "InspoIDScanner") as? String ?? ""
-        if let linked = IDScannerAdapter.linked(name: scanner) {
+        if !scanner.isEmpty, let linked = IDScannerAdapter.linked(name: scanner, scanner: IDScannerBinding.scanner()) {
             NativeLibraries.shared.register(linked)
         }
         if let standIn = StandInReader.fromBuild() {

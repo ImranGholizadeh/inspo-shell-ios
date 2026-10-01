@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A0000000000000000000204 /* IDScannerSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000000000000000000202 /* IDScannerSurface */; };
+		1A0000000000000000000205 /* IDScannerBinding in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000000000000000000203 /* IDScannerBinding */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1A0000000000000000000001 /* Shell.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Shell.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000002 /* Default.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Default.xcconfig; sourceTree = "<group>"; };
@@ -34,6 +39,7 @@
 				Assets.xcassets,
 				Info.plist,
 				ShellApp.swift,
+				IDScanner.swift,
 				ShellBridge.swift,
 				StandInReader.swift,
 			);
@@ -73,6 +79,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A0000000000000000000204 /* IDScannerSurface in Frameworks */,
+				1A0000000000000000000205 /* IDScannerBinding in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -148,6 +156,10 @@
 				1A0000000000000000000003 /* Shell */,
 			);
 			name = Shell;
+			packageProductDependencies = (
+				1A0000000000000000000202 /* IDScannerSurface */,
+				1A0000000000000000000203 /* IDScannerBinding */,
+			);
 			productName = Shell;
 			productReference = 1A0000000000000000000001 /* Shell.app */;
 			productType = "com.apple.product-type.application";
@@ -171,6 +183,10 @@
 			);
 			mainGroup = 1A0000000000000000000004;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1A0000000000000000000200 /* XCLocalSwiftPackageReference "Packages/IDScannerSurface" */,
+				1A0000000000000000000201 /* XCLocalSwiftPackageReference "Packages/IDScannerBinding" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1A0000000000000000000005 /* Products */;
 			projectDirPath = "";
@@ -405,6 +421,28 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		1A0000000000000000000200 /* XCLocalSwiftPackageReference "Packages/IDScannerSurface" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/IDScannerSurface;
+		};
+		1A0000000000000000000201 /* XCLocalSwiftPackageReference "Packages/IDScannerBinding" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/IDScannerBinding;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A0000000000000000000202 /* IDScannerSurface */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = IDScannerSurface;
+		};
+		1A0000000000000000000203 /* IDScannerBinding */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = IDScannerBinding;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1A0000000000000000000030 /* Project object */;
 }

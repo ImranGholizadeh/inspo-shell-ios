@@ -37,30 +37,6 @@ A test build may set `INSPO_NATIVE_STAND_IN` to a library's name (`id-reader`):
 events played one per press of either volume button, so a gene's scan flow
 runs with no device.
 
-## The Bluetooth ID scanner (E47)
-
-`Shell/IDScanner.swift` is the adapter that maps a vendor's Bluetooth ID
-scanner package onto a gene's endpoint documents. It is written against
-`BluetoothIDScanner`, the scanner's surface in plain terms; the vendor's
-package is never in this repository. A customer build compiles the package
-with `Bindings/VendorIDScanner.swift` (in no target here) and sets
-`INSPO_ID_SCANNER` to the library's name in its urls; the shell finds the
-binding by its Objective-C name and registers the adapter. The stand-in
-conforms to the same surface, so its answers take the same shape.
-
-| Endpoint (`native://<library>/<name>`) | What the adapter does |
-|---|---|
-| `state` (call) | `{kind: "state", state, battery}` from the package's connection status and battery |
-| `feedback` (call, data `accept`, `deny` or `error`, or `{pattern}`) | accept plays the package's success feedback; deny and error its error feedback |
-| `start-reading`, `stop-reading` (calls) | subscribe and unsubscribe the package's result listener |
-| `reconnect`, `forget` (calls) | connect again to, or forget, the paired scanner the package's status names |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue), `duplicate`, `state` (`state`), `battery` (`battery`) |
-
-The adapter configures the package once, on first use: its age and expiry
-checks on, its duplicate window as delivered, reporting off the phone never
-configured. Nothing but the fields above leaves the adapter, and the shell
-keeps only those the endpoint's `keep` names.
-
 To upload a lane's build: `scripts/archive.sh <lane xcconfig>`, then
 `scripts/upload.sh` (the newest lane archive, or one named), which sends it
 to App Store Connect with its team's signing, no Organizer needed. An archive
@@ -68,6 +44,74 @@ made from Xcode's Product > Archive carries the shell's defaults, not a lane's.
 
 For a phone, open `Shell.xcodeproj` in Xcode, choose the team, and run; for
 TestFlight, Product > Archive, then Distribute to App Store Connect.
+
+## The Bluetooth ID scanner (E47)
+
+`Shell/IDScanner.swift` is the adapter that maps a vendor's Bluetooth ID
+scanner package onto a gene's endpoint documents. It is written against
+`BluetoothIDScanner`, the scanner's surface in plain terms, in its own
+module (`Packages/IDScannerSurface`). The vendor's package is never in this
+repository; the shell links `Packages/IDScannerBinding`, which links no
+scanner. The stand-in conforms to the same surface, so its answers take
+the same shape.
+
+| Endpoint (`native://<library>/<name>`) | What the adapter does |
+|---|---|
+| `state` (call) | `{kind: "state", state, battery}` from the package's connection status and battery |
+| `feedback` (call, data `accept`, `deny` or `error`, or `{pattern}`) | accept plays the package's success feedback; deny and error its error feedback |
+| `start-reading`, `stop-reading` (calls) | subscribe and unsubscribe the package's result listener |
+| `reconnect`, `forget` (calls) | connect again to, or forget, the paired scanner the package's status names |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`, a real connection change: the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`) |
+
+The adapter configures the package once, on first use: its age and expiry
+checks on, its duplicate window as delivered, reporting off the phone never
+configured. Nothing but the fields above leaves the adapter, and the shell
+keeps only those the endpoint's `keep` names.
+
+### A customer build: its own Xcode workspace
+
+The customer's lane, never this repository, holds:
+
+1. `<lane>/ios/Customer.xcworkspace`, holding this repository's
+   `Shell.xcodeproj` and the folder `IDScannerBinding` beside it. Xcode
+   builds the workspace's `IDScannerBinding` package in place of the
+   shell's own (the same package name), so the shell links the binding.
+2. `<lane>/ios/IDScannerBinding/`, a Swift package named `IDScannerBinding`
+   with one library product of that name, whose one source is
+   `Bindings/VendorIDScanner.swift` from this repository with the vendor
+   module's import line added, and which depends on this repository's
+   `Packages/IDScannerSurface` (by path) and on the vendor's package (by
+   path, where the customer keeps it):
+
+       // swift-tools-version:5.9
+       import PackageDescription
+       let package = Package(
+           name: "IDScannerBinding",
+           platforms: [.iOS(.v17), .macOS(.v14)],
+           products: [.library(name: "IDScannerBinding", targets: ["IDScannerBinding"])],
+           dependencies: [.package(path: "<shell>/Packages/IDScannerSurface"),
+                          .package(path: "<the vendor's package>")],
+           targets: [.target(name: "IDScannerBinding",
+                             dependencies: ["IDScannerSurface",
+                                            .product(name: "<its library>", package: "<its package>")])]
+       )
+
+3. Its xcconfig, beside `INSPO_URL` and the rest: `INSPO_ID_SCANNER =
+   id-reader` (the library's name in its urls), and the two Bluetooth keys
+   the app's Info.plist must carry for the scanner:
+   - `NSBluetoothAlwaysUsageDescription`, the reason iOS shows when it asks
+     for Bluetooth: `INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = ...`
+     in the xcconfig;
+   - `UIBackgroundModes` with `bluetooth-central`, so the scanner stays
+     connected while the phone is locked. Xcode builds no setting for it,
+     so the lane keeps its own copy of `Shell/Info.plist` with the key
+     added, and its xcconfig sets `INFOPLIST_FILE` to that copy.
+
+Then: `xcodebuild -workspace <lane>/ios/Customer.xcworkspace -scheme Shell
+-xcconfig <lane>/deploy/ios.xcconfig ...`, as for any lane build, and
+`scripts/archive.sh <lane xcconfig> <lane workspace>` to archive it. A build
+without the workspace (this repository alone, or a test build with the
+stand-in) links no scanner and declares no Bluetooth.
 
 ## The Inspo desktop app (the Desktop target)
 

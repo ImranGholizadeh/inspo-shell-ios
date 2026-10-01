@@ -2,6 +2,7 @@
 // Proprietary and confidential.
 
 import AVFoundation
+import IDScannerSurface
 import UIKit
 
 // A stand-in for the Bluetooth ID scanner, for tests without the device
@@ -51,10 +52,6 @@ final class StandInReader: NSObject, BluetoothIDScanner {
             .battery(15),
             .connection("reconnecting"),
         ]
-    }
-
-    override init() {
-        super.init()
     }
 
     /// The stand-in the build names, in the adapter, if any.

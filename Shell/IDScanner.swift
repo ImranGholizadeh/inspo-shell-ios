@@ -2,6 +2,7 @@
 // Proprietary and confidential.
 
 import Foundation
+import IDScannerSurface
 #if os(iOS)
 import UIKit
 #endif
@@ -10,8 +11,9 @@ import UIKit
 // vendor's scanner package onto the endpoint documents a gene declares
 // (E40: one document per call, one per event stream). The package is not in
 // this repository: the adapter is written against BluetoothIDScanner, the
-// surface it needs in plain terms, and a customer build links the package
-// with one binding file that conforms it (Bindings/, compiled only there).
+// surface it needs in plain terms (Packages/IDScannerSurface), and a
+// customer's Xcode workspace builds a binding that conforms the package to
+// it in place of the stand-in package Packages/IDScannerBinding (README).
 // A test build's stand-in (StandInReader, E42) conforms to the same
 // surface, so its answers take the same mapping and the same shape.
 //
@@ -28,82 +30,19 @@ import UIKit
 //   { kind: "read" | "failedRead" | "failedValidation",
 //     fullName, dateOfBirth, expirationDate, isOver21, isExpired,  (the holder's, when read)
 //     issueCode }                                                  (the first issue, if any)
-//   { kind: "duplicate" }                   a result the scanner suppressed as a repeat
-//   { kind: "state", state }                connecting, connected, reading, reconnecting, ...
-//   { kind: "battery", battery }            the percent
+//   { kind: "duplicate", result }      a result the scanner suppressed as a
+//                                      repeat, with only its kind (read, ...)
+//   { kind: "state", state }           a real connection change: idle,
+//                                      scanning, connecting, connected,
+//                                      reconnecting, disconnected; the
+//                                      package's reading during each scan is
+//                                      held back (owner, 2026-10-01: "Hold
+//                                      'reading' back")
+//   { kind: "battery", battery }       the percent
 //
 // Nothing else leaves the adapter: the raw scan, the document's number and
-// every other field of the vendor's result have no place in these types.
-// The shell then keeps only the fields the endpoint's keep names (E41).
-
-/// The scanner's surface the adapter needs. A binding conforms the vendor's
-/// package to it; the stand-in conforms a made-up scanner. Callbacks come
-/// on the main thread.
-protocol BluetoothIDScanner: AnyObject {
-    init()
-    /// Configures the package; the adapter calls it once, before anything else.
-    func configure(_ policy: ScannerPolicy) throws
-    /// The connection's state now, and the paired scanner's id if one is paired.
-    var connection: ScannerConnection { get }
-    /// The battery's percent, if the scanner has said.
-    var batteryPercent: Int? { get }
-    /// The ids of the scanners paired with this phone.
-    var pairedDeviceIDs: [String] { get }
-    func feedback(_ kind: ScannerFeedback, done: @escaping (Error?) -> Void)
-    func connect(_ deviceID: String, done: @escaping (Error?) -> Void)
-    func forget(_ deviceID: String, done: @escaping (Error?) -> Void)
-    /// The app came back to the foreground: the package reconnects fast.
-    func becameActive()
-    /// Subscribes to the package's events until the returned cancel is called.
-    func listen(_ each: @escaping (ScannerLibraryEvent) -> Void) -> () -> Void
-}
-
-/// The package's checks: holders under its minimum age, and expired
-/// documents, fail validation with an issue code. The duplicate window is
-/// left as the package delivers it.
-struct ScannerPolicy {
-    var checksAge: Bool
-    var checksExpiry: Bool
-}
-
-struct ScannerConnection {
-    var state: String
-    var deviceID: String?
-}
-
-/// The package's two feedback kinds on the scanner (a beep and a vibration).
-enum ScannerFeedback {
-    case success, error
-}
-
-/// One event of the package, reduced to what the gene may receive.
-enum ScannerLibraryEvent {
-    case result(ScannerResult)
-    case duplicate(ScannerResult)
-    case connection(String)
-    case battery(Int)
-    /// discovery, pairing steps, reporting and warnings: not passed on
-    case unpassed
-}
-
-/// A scan's result: its kind, the holder's kept fields when the document
-/// was read, and the codes of its issues (errors first, then warnings).
-struct ScannerResult {
-    enum Kind: String {
-        case read, failedRead, failedValidation
-    }
-    var kind: Kind
-    var holder: ScannerHolder?
-    var issueCodes: [String]
-}
-
-struct ScannerHolder {
-    var fullName: String
-    var dateOfBirth: String // ISO, YYYY-MM-DD
-    var expirationDate: String?
-    var isOver21: Bool
-    var isExpired: Bool?
-}
+// every other field of the vendor's result have no place in the surface's
+// types. The shell then keeps only the fields the endpoint's keep names (E41).
 
 /// The adapter: a NativeLibrary over a BluetoothIDScanner.
 final class IDScannerAdapter: NativeLibrary {
@@ -117,6 +56,9 @@ final class IDScannerAdapter: NativeLibrary {
     private var stateListener: (() -> Void)?
     private var scanListener: (() -> Void)?
     private var foreground: NSObjectProtocol?
+    /// The last state the streams heard, so a held-back reading never
+    /// shows as a change.
+    private var heardState: String?
 
     init(name: String, scanner: BluetoothIDScanner) {
         self.name = name
@@ -129,12 +71,11 @@ final class IDScannerAdapter: NativeLibrary {
         if let foreground { NotificationCenter.default.removeObserver(foreground) }
     }
 
-    /// The scanner a customer build links: the binding's class, registered
-    /// with the Objective-C runtime under this name. Nil in a build without it.
-    static func linked(name: String) -> IDScannerAdapter? {
-        guard !name.isEmpty,
-              let type = NSClassFromString("InspoBluetoothIDScanner") as? BluetoothIDScanner.Type else { return nil }
-        return IDScannerAdapter(name: name, scanner: type.init())
+    /// The scanner a customer build links (IDScannerBinding's), under the
+    /// library name the build gives. Nil in a build without one.
+    static func linked(name: String, scanner: BluetoothIDScanner?) -> IDScannerAdapter? {
+        guard !name.isEmpty, let scanner else { return nil }
+        return IDScannerAdapter(name: name, scanner: scanner)
     }
 
     // MARK: configuration, once
@@ -171,7 +112,7 @@ final class IDScannerAdapter: NativeLibrary {
         }
         switch call {
         case "state":
-            var value: [String: Any] = ["kind": "state", "state": scanner.connection.state]
+            var value: [String: Any] = ["kind": "state", "state": Self.shown(scanner.connection.state)]
             if let battery = scanner.batteryPercent { value["battery"] = battery }
             answer(.success(value))
         case "feedback":
@@ -243,7 +184,9 @@ final class IDScannerAdapter: NativeLibrary {
                 }
             }
         }
-        each(["kind": "state", "state": scanner.connection.state]) // where the stream begins
+        let now = Self.shown(scanner.connection.state)
+        heardState = now
+        each(["kind": "state", "state": now]) // where the stream begins
         return { [weak self] in
             guard let self else { return }
             self.sinks.removeValue(forKey: key)
@@ -251,6 +194,7 @@ final class IDScannerAdapter: NativeLibrary {
                 // the page has gone: nothing is listening, nothing is read
                 self.stateListener?()
                 self.stateListener = nil
+                self.heardState = nil
                 self.stopReading()
             }
         }
@@ -262,21 +206,34 @@ final class IDScannerAdapter: NativeLibrary {
     }
 
     private func send(_ event: ScannerLibraryEvent) {
+        if case .connection(let state) = event {
+            // only a real change: reading is connected, and a scan's
+            // connected after it is no change
+            let now = Self.shown(state)
+            guard now != heardState else { return }
+            heardState = now
+        }
         guard let value = Self.flat(event) else { return }
         sinks.values.forEach { $0(value) }
     }
 
     // MARK: the flat shape
 
+    /// A state as the gene hears it: the package's reading, during each
+    /// scan, is a connected scanner.
+    static func shown(_ state: String) -> String {
+        state == "reading" ? "connected" : state
+    }
+
     /// An event as the gene receives it: top-level fields only, a kind first.
     static func flat(_ event: ScannerLibraryEvent) -> [String: Any]? {
         switch event {
         case .result(let result):
             return flat(result)
-        case .duplicate:
-            return ["kind": "duplicate"]
+        case .duplicate(let result):
+            return ["kind": "duplicate", "result": result.kind.rawValue]
         case .connection(let state):
-            return ["kind": "state", "state": state]
+            return ["kind": "state", "state": shown(state)]
         case .battery(let percent):
             return ["kind": "battery", "battery": percent]
         case .unpassed:

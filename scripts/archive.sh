@@ -4,14 +4,18 @@
 # (Distribute App). The build number is the time, so every upload differs.
 # Signing is automatic with the project's team; the first archive of a new
 # bundle id registers it in that team (-allowProvisioningUpdates).
-# Usage: scripts/archive.sh [<lane xcconfig>]   (from this repository; none: Inspo's defaults)
+# Usage: scripts/archive.sh [<lane xcconfig> [<lane workspace>]]
+#   (from this repository; none: Inspo's defaults). A lane whose app links a
+#   native library's package (the Bluetooth ID scanner, README) names its
+#   Xcode workspace, which holds this project and the package's binding.
 set -eu
 conf=${1:-Config/Default.xcconfig}
+if [ -n "${2:-}" ]; then container="-workspace $2"; else container="-project Shell.xcodeproj"; fi
 day=$(date +%Y-%m-%d)
 name=$(sed -n 's/^INSPO_APP_NAME *= *//p' "$conf" | tail -1)
 out="$HOME/Library/Developer/Xcode/Archives/$day/${name:-Shell} $(date +%H.%M.%S).xcarchive"
 echo "+ archiving ${name:-Shell} with $conf"
-xcodebuild archive -project Shell.xcodeproj -scheme Shell -configuration Release \
+xcodebuild archive $container -scheme Shell -configuration Release \
   -destination 'generic/platform=iOS' -xcconfig "$conf" -archivePath "$out" \
   -allowProvisioningUpdates CURRENT_PROJECT_VERSION="$(date +%Y%m%d%H%M)" | \
   grep -E 'error|warning: |ARCHIVE (SUCCEEDED|FAILED)' || true

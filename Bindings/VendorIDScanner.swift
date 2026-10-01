@@ -2,13 +2,16 @@
 // Proprietary and confidential.
 
 // The binding that links a vendor's Bluetooth ID scanner package to the
-// shell (E47). It is not compiled here: this folder is in no target, and the
-// package is never in this repository (its terms grant no licence to add
-// it). A customer build compiles this file with the package and sets
-// INSPO_ID_SCANNER to the library's name in its urls; the shell then finds
-// the class below by its Objective-C name and registers IDScannerAdapter
-// over it (Shell/IDScanner.swift). When the package is linked as a Swift
-// package rather than compiled into the app, add its import line here.
+// shell (E47), as a template. It is not compiled here: this folder is in no
+// target, and the package is never in this repository (its terms grant no
+// licence to add it). A customer's Xcode workspace holds the shell's
+// project beside a Swift package named IDScannerBinding, in the customer's
+// lane, whose one source is this file with the vendor module's import added,
+// and which depends on the shell's Packages/IDScannerSurface and on the
+// vendor's package (README, "The Bluetooth ID scanner"). Xcode builds that
+// package in place of the shell's own IDScannerBinding, which links none;
+// the build's INSPO_ID_SCANNER names the library, and the shell registers
+// IDScannerAdapter over IDScannerBinding.scanner().
 //
 // The binding only translates types: the vendor's events into
 // ScannerLibraryEvent, its scan into ScannerResult (the holder's five kept
@@ -16,14 +19,16 @@
 // callbacks on the main thread. Every mapping decision is the adapter's.
 
 import Foundation
+import IDScannerSurface
+// import <the vendor package's module>
 
-@objc(InspoBluetoothIDScanner)
-final class VendorIDScanner: NSObject, BluetoothIDScanner {
+/// The scanner this build links.
+public enum IDScannerBinding {
+    public static func scanner() -> BluetoothIDScanner? { VendorIDScanner() }
+}
+
+final class VendorIDScanner: BluetoothIDScanner {
     private let scanner = Scanner.shared
-
-    override init() {
-        super.init()
-    }
 
     /// Age and expiry policy on (the package's minimum age as delivered),
     /// the duplicate window as delivered. Reporting off the phone is never
@@ -49,12 +54,12 @@ final class VendorIDScanner: NSObject, BluetoothIDScanner {
     }
 
     func connect(_ deviceID: String, done: @escaping (Error?) -> Void) {
-        guard let id = UUID(uuidString: deviceID) else { return done(NativeError(message: "not a scanner id")) }
+        guard let id = UUID(uuidString: deviceID) else { return done(BindingError.notAScannerID) }
         run(done) { try await self.scanner.connect(peripheralId: id) }
     }
 
     func forget(_ deviceID: String, done: @escaping (Error?) -> Void) {
-        guard let id = UUID(uuidString: deviceID) else { return done(NativeError(message: "not a scanner id")) }
+        guard let id = UUID(uuidString: deviceID) else { return done(BindingError.notAScannerID) }
         run(done) { await self.scanner.forget(peripheralId: id) }
     }
 
@@ -97,4 +102,8 @@ final class VendorIDScanner: NSObject, BluetoothIDScanner {
             }
         }
     }
+}
+
+enum BindingError: Error {
+    case notAScannerID
 }
