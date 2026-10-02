@@ -25,6 +25,42 @@ public protocol BluetoothIDScanner: AnyObject {
     func becameActive()
     /// Subscribes to the package's events until the returned cancel is called.
     func listen(_ each: @escaping (ScannerLibraryEvent) -> Void) -> () -> Void
+    /// Starts pairing a scanner this phone has never used. The package looks
+    /// for scanners and says each one it hears (.found, again and again
+    /// while it looks); the adapter picks one and connects it (connect); the
+    /// package then waits for the person to scan any barcode with the
+    /// scanner in their hand (.confirming), reads and discards that scan,
+    /// and keeps the pairing. done is called once: nil when the scanner is
+    /// paired, or why the package stopped. The adapter keeps the time
+    /// limits; the package's own stand behind them.
+    func pair(_ place: ScannerPlace, done: @escaping (ScannerPairingFailure?) -> Void)
+    /// Stops the pairing that runs, and its looking. None runs: nothing happens.
+    func stopPairing()
+}
+
+/// Where a scanner is paired: the venue and the door as the gene gives
+/// them (what it does not give is empty), and this phone, as the shell
+/// knows it. The package keeps it with the pairing, on the phone.
+public struct ScannerPlace {
+    public var venue: String
+    public var door: String
+    public var doorName: String
+    public var phone: String
+
+    public init(venue: String, door: String, doorName: String, phone: String) {
+        self.venue = venue
+        self.door = door
+        self.doorName = doorName
+        self.phone = phone
+    }
+}
+
+/// Why a pairing did not finish, as far as the package can say.
+public enum ScannerPairingFailure {
+    case bluetoothOff, bluetoothNotAllowed
+    /// anything else (it gave up, or was stopped): the adapter names it
+    /// by the step the pairing had reached
+    case stopped
 }
 
 /// The package's checks: holders under its minimum age, and expired
@@ -62,7 +98,13 @@ public enum ScannerLibraryEvent {
     case duplicate(ScannerResult)
     case connection(String)
     case battery(Int)
-    /// discovery, pairing steps, reporting and warnings: not passed on
+    /// a scanner heard while a pairing looks: its id, and its signal in
+    /// dBm (nearer to zero is stronger), smoothed by the package
+    case found(deviceID: String, signal: Int)
+    /// a pairing's picked scanner is connected, and the package waits for
+    /// the confirming scan
+    case confirming
+    /// reporting and warnings: not passed on
     case unpassed
 }
 

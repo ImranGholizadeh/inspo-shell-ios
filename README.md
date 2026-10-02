@@ -36,7 +36,8 @@ lane builds with its own xcconfig, which sets `INSPO_URL` (written
 A test build may set `INSPO_NATIVE_STAND_IN` to a library's name (`id-reader`):
 `StandInReader` then stands in for the Bluetooth ID scanner, with made-up
 events played one per press of either volume button, so a gene's scan flow
-runs with no device.
+runs with no device. A first pairing plays too: the press that comes while it
+waits for the confirming scan is that scan.
 
 To upload a lane's build: `scripts/archive.sh <lane xcconfig>`, then
 `scripts/upload.sh` (the newest lane archive, or one named), which sends it
@@ -62,12 +63,39 @@ the same shape.
 | `feedback` (call, data `accept`, `deny` or `error`, or `{pattern}`) | accept plays the package's success feedback; deny and error its error feedback |
 | `start-reading`, `stop-reading` (calls) | subscribe and unsubscribe the package's result listener |
 | `reconnect`, `forget` (calls) | connect again to, or forget, the paired scanner the package's status names |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`, a real connection change: the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`) |
+| `start-pairing` (call, data `{venue, door, doorName}`, each optional) | starts pairing a scanner this phone has never used, and answers at once with `{kind: "pairing", step}`: `looking`, or the step of the pairing that already runs, which goes on. The data is where the scanner is paired; the package keeps it with the pairing, on the phone, beside iOS's id of the phone for the app's maker, which the shell adds |
+| `stop-pairing` (call) | stops the pairing that runs |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`, a real connection change: the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
 
 The adapter configures the package once, on first use: its age and expiry
 checks on, its duplicate window as delivered, reporting off the phone never
 configured. Nothing but the fields above leaves the adapter, and the shell
 keeps only those the endpoint's `keep` names.
+
+### A first pairing: the nearest scanner, confirmed by a scan
+
+The person is shown no list (owner, 2026-10-02: "Nearest scanner, confirm by
+scan"). `start-pairing` answers at once, since a call must answer within 30
+seconds and a pairing takes up to a minute; its steps come on the `events`
+stream, each `{kind: "pairing", step}`:
+
+| Step | What has happened | Its time limit, and the reason when it fails |
+|---|---|---|
+| `looking` | the package looks for scanners | 15 s with none heard: `none-found` |
+| `connecting` | 3 s after the first scanner was heard, the adapter picked the one with the strongest signal (the first heard of two equally strong) and connects it | 10 s: `not-connected` |
+| `confirm` | the pick is connected; the person scans any barcode with the scanner in their hand, which the package reads and discards | 30 s: `not-confirmed` |
+| `paired` | the package has kept the pairing; the scanner is connected, as after `reconnect` | |
+| `failed`, with `reason` | one of the three above, or `stopped` (`stop-pairing`), `bluetooth-off`, `bluetooth-not-allowed` | |
+
+The scan is the guard: a pick that is not the scanner in the person's hand is
+never confirmed, fails as `not-confirmed`, and is forgotten, so the phone is
+not left connected to it (a scanner that was paired before the pairing began
+is not forgotten). The scanners heard are never passed on. Nothing of a
+pairing is personal, and nothing of the confirming scan leaves the package. A
+stream opened while a pairing runs hears its step after its first state.
+`scripts/check-pairing.sh` checks all of it on this Mac, with a scanner that
+only records what it was asked and a clock the check moves, and plays the
+stand-in's pairing.
 
 ### A customer build: its own Xcode workspace
 

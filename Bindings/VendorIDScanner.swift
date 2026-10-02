@@ -16,8 +16,11 @@
 // The binding only translates types: the vendor's events into
 // ScannerLibraryEvent, its scan into ScannerResult (the holder's five kept
 // fields and the issue codes, nothing else), its async calls into
-// callbacks on the main thread. Every mapping decision is the adapter's.
+// callbacks on the main thread. Every mapping decision is the adapter's:
+// in a first pairing the binding passes on each scanner the package hears
+// and the adapter picks which to connect.
 
+import CoreBluetooth
 import Foundation
 import IDScannerSurface
 // import <the vendor package's module>
@@ -29,6 +32,9 @@ public enum IDScannerBinding {
 
 final class VendorIDScanner: BluetoothIDScanner {
     private let scanner = Scanner.shared
+    /// Counts the pairings asked for and stopped, so one that was stopped
+    /// while it waited for Bluetooth is not started after all.
+    private var pairings = 0
 
     /// Age and expiry policy on (the package's minimum age as delivered),
     /// the duplicate window as delivered. Reporting off the phone is never
@@ -67,6 +73,57 @@ final class VendorIDScanner: BluetoothIDScanner {
         scanner.applicationDidBecomeActive()
     }
 
+    /// The package's whole pairing: it looks, the adapter connects its pick
+    /// (connect), the package waits for the confirming scan, configures the
+    /// scanner and keeps the pairing with the place. The package refuses a
+    /// pairing while its Bluetooth has not yet said it is on (the moment
+    /// after it is first configured, and while iOS asks the person), so a
+    /// refusal is tried again for three seconds before it is believed.
+    func pair(_ place: ScannerPlace, done: @escaping (ScannerPairingFailure?) -> Void) {
+        let door = DoorBinding(venueId: place.venue, doorId: place.door, doorName: place.doorName, phoneId: place.phone)
+        pairings += 1
+        let mine = pairings
+        Task { @MainActor in
+            for attempt in 0... {
+                do {
+                    _ = try await self.scanner.startPairing(door: door)
+                    return done(nil)
+                } catch ScannerError.bluetoothUnavailable where attempt < 6 && !Self.bluetoothRefused {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard mine == self.pairings else { return done(.stopped) }
+                } catch {
+                    return done(Self.failure(error))
+                }
+            }
+        }
+    }
+
+    /// The package's cancel leaves its looking on; both are stopped.
+    func stopPairing() {
+        pairings += 1
+        scanner.cancelPairing()
+        scanner.stopDiscovery()
+    }
+
+    /// The person, or the phone's rules, said no to Bluetooth for this app.
+    static var bluetoothRefused: Bool {
+        CBCentralManager.authorization == .denied || CBCentralManager.authorization == .restricted
+    }
+
+    /// Why the package's pairing threw, in the surface's terms. Its
+    /// Bluetooth not being on is not allowed when the person has not said
+    /// yes (refused, or still being asked), and off otherwise.
+    static func failure(_ error: Error) -> ScannerPairingFailure {
+        switch error {
+        case ScannerError.unauthorized:
+            return .bluetoothNotAllowed
+        case ScannerError.bluetoothUnavailable:
+            return CBCentralManager.authorization == .allowedAlways ? .bluetoothOff : .bluetoothNotAllowed
+        default:
+            return .stopped
+        }
+    }
+
     func listen(_ each: @escaping (ScannerLibraryEvent) -> Void) -> () -> Void {
         let token = scanner.addListener { each(Self.event($0)) }
         return { token.cancel() }
@@ -78,6 +135,8 @@ final class VendorIDScanner: BluetoothIDScanner {
         case .scanDebounced(let scan): return .duplicate(result(scan))
         case .connectionStateChanged(let status): return .connection(status.state.rawValue)
         case .batteryChanged(let battery): return .battery(battery.percent)
+        case .deviceFound(let device): return .found(deviceID: device.peripheralId.uuidString, signal: device.rssi)
+        case .pairingStep(.confirmByScan): return .confirming
         default: return .unpassed
         }
     }

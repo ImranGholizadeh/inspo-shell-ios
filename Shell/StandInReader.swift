@@ -1,9 +1,12 @@
 // Copyright (c) 2026 Imran Gholizadeh, doing business as Inspo. All rights reserved.
 // Proprietary and confidential.
 
-import AVFoundation
+import Foundation
 import IDScannerSurface
+#if os(iOS)
+import AVFoundation
 import UIKit
+#endif
 
 // A stand-in for the Bluetooth ID scanner, for tests without the device
 // (owner, 2026-09-30, E42: "Shell stand-in + Go tests"): a build whose
@@ -17,12 +20,28 @@ import UIKit
 // the phone"; iOS lets an app hear the volume buttons, never the side
 // button). The script is made-up people only, never a real ID; its dates
 // are counted from today, so the ages and expiries never go stale.
+//
+// A first pairing plays as the device's does, with the same button: two
+// made-up scanners are heard a second after it starts, the far one first,
+// so the adapter's pick of the nearest shows; the pick connects; and while
+// the pairing waits for the confirming scan, the next press is that scan:
+// it plays no event, the script does not move, and the scanner is paired.
+// No press, and the adapter's time limit fails the pairing. The stand-in
+// forgets nothing: it stays paired and connected whatever a pairing does,
+// so the flows that need no pairing run as they did. On a Mac (the check,
+// scripts/check-pairing.sh) it has no buttons and no haptic: press() is called.
 
 final class StandInReader: NSObject, BluetoothIDScanner {
     private var next = 0
     private var listeners: [UUID: (ScannerLibraryEvent) -> Void] = [:]
     private var observation: NSKeyValueObservation?
     private var battery = 90
+    /// A pairing that runs: its done, the scanner the adapter picked once
+    /// it waits for the confirming scan, and the step that is on its way.
+    private var pairingDone: ((ScannerPairingFailure?) -> Void)?
+    private var confirmingWith: String?
+    private var pending: (() -> Void)?
+    var wait = IDScannerAdapter.onMain
 
     /// The events a press plays, in turn: every kind the stream carries,
     /// and a failed validation for each issue the policy checks.
@@ -72,13 +91,26 @@ final class StandInReader: NSObject, BluetoothIDScanner {
     var pairedDeviceIDs: [String] { ["stand-in"] }
 
     func feedback(_ kind: ScannerFeedback, done: @escaping (Error?) -> Void) {
+        #if os(iOS)
         UINotificationFeedbackGenerator().notificationOccurred(kind == .success ? .success : .error)
+        #endif
         done(nil)
     }
 
     func connect(_ deviceID: String, done: @escaping (Error?) -> Void) {
-        emit(.connection("connected"))
-        done(nil)
+        guard pairingDone != nil else {
+            emit(.connection("connected"))
+            done(nil)
+            return
+        }
+        // a pairing's pick: the link, then the wait for the confirming scan
+        emit(.connection("connecting"))
+        pending = wait(0.8) { [weak self] in
+            self?.emit(.connection("connected"))
+            done(nil)
+            self?.confirmingWith = deviceID
+            self?.emit(.confirming)
+        }
     }
 
     func forget(_ deviceID: String, done: @escaping (Error?) -> Void) {
@@ -86,6 +118,27 @@ final class StandInReader: NSObject, BluetoothIDScanner {
     }
 
     func becameActive() {}
+
+    func pair(_ place: ScannerPlace, done: @escaping (ScannerPairingFailure?) -> Void) {
+        stopPairing()
+        pairingDone = done
+        pending = wait(1) { [weak self] in
+            self?.emit(.found(deviceID: "stand-in-far", signal: -72))
+            self?.emit(.found(deviceID: "stand-in", signal: -48))
+        }
+    }
+
+    func stopPairing() {
+        guard let done = pairingDone else { return }
+        pending?()
+        pending = nil
+        pairingDone = nil
+        confirmingWith = nil
+        if connection.state != "connected" {
+            emit(.connection("connected")) // the link the stand-in always has
+        }
+        done(.stopped)
+    }
 
     func listen(_ each: @escaping (ScannerLibraryEvent) -> Void) -> () -> Void {
         let key = UUID()
@@ -103,6 +156,7 @@ final class StandInReader: NSObject, BluetoothIDScanner {
 
     /// Either volume button plays the next event to every listener.
     private func followVolume() {
+        #if os(iOS)
         guard observation == nil else { return }
         let audio = AVAudioSession.sharedInstance()
         try? audio.setCategory(.ambient, options: [.mixWithOthers])
@@ -110,10 +164,23 @@ final class StandInReader: NSObject, BluetoothIDScanner {
         observation = audio.observe(\.outputVolume, options: [.new]) { [weak self] _, _ in
             DispatchQueue.main.async { self?.press() }
         }
+        #endif
     }
 
-    /// Plays the script's next event; the stream's own test hook too.
+    /// Plays the script's next event; the stream's own test hook too. While
+    /// a pairing waits for the confirming scan, the press is that scan.
     func press() {
+        if let picked = confirmingWith, let done = pairingDone {
+            // read and discarded, as the package's is; a press confirms
+            // only the scanner in the hand, never the far one
+            guard picked == "stand-in" else { return }
+            confirmingWith = nil
+            pending = wait(0.5) { [weak self] in
+                self?.pairingDone = nil
+                done(nil)
+            }
+            return
+        }
         let script = Self.script()
         let event = script[next % script.count]
         next += 1
