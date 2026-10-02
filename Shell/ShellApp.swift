@@ -8,7 +8,8 @@ import SwiftUI
 // hanging fruit go for it"). It holds one web view on the gene's page; the
 // Go engine runs the graph and the page draws it, as on the web. The shell
 // adds only what a phone has and a page does not: haptics, the camera, the
-// links that open the app, and native libraries (a vendor's reader).
+// light, the links that open the app, and native libraries (a vendor's
+// reader).
 @main
 struct ShellApp: App {
     var body: some Scene {

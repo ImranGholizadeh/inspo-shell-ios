@@ -7,7 +7,8 @@ import UIKit
 import WebKit
 
 // The web view and its bridge. The page (inspo-core-js) talks to the shell
-// through window.webkit.messageHandlers.inspo ({type: "haptic", mode}, and
+// through window.webkit.messageHandlers.inspo ({type: "haptic", mode},
+// {type: "torch", mode}: the phone's light, Torch.swift, and
 // {type: "native", ...}: a native library's call or stream, NativeLibrary.swift);
 // the shell talks to the page through window.inspo, which the page sets
 // (linkOpened, nativeAnswered, nativeFailed), and what arrives before the
@@ -53,6 +54,9 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         view.isInspectable = true // Safari's Web Inspector, on a development build only
         #endif
         webView = view
+        // a light the page lit goes out when the app leaves the screen
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                               object: nil, queue: .main) { _ in Torch.shared.putOut() }
         if let url = startURL {
             view.load(URLRequest(url: url))
         }
@@ -66,6 +70,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         switch type {
         case "haptic":
             playHaptic(body["mode"] as? String ?? "")
+        case "torch":
+            #if DEBUG
+            print("shell: the page asked for the torch") // a development build says so; a simulator has no light to show it
+            #endif
+            Torch.shared.take(mode: body["mode"] as? String ?? "")
         case "native":
             NativeLibraries.shared.handle(body,
                 answered: { [weak self] id, value in self?.call("nativeAnswered", id, value) },
@@ -126,6 +135,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
         NativeLibraries.shared.stopAll() // the page that asked is gone
+        Torch.shared.putOut()
         if webView.url != nil {
             webView.reload()
         } else if let url = startURL {
@@ -133,9 +143,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         }
     }
 
-    /// A page loading afresh: the streams the page before asked for end.
+    /// A page loading afresh: the streams the page before asked for end,
+    /// and a light it lit goes out.
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         NativeLibraries.shared.stopAll()
+        Torch.shared.putOut()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

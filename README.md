@@ -12,6 +12,7 @@ phone has. Mobile is a mine of its own, separate from the web mine (owner,
 | The page asks or hears | The shell |
 |---|---|
 | a haptic (the device neuron's `haptic`) | `window.webkit.messageHandlers.inspo.postMessage({type: "haptic", mode})`, played by iOS's feedback generators |
+| the light (the device neuron's `torch`) | `{type: "torch", mode: "on"}` or `{type: "torch", mode: "off"}`, switched on the phone's own light (`Shell/Torch.swift`); never answered. A device with no light switches nothing. A light the shell lit goes out when its page goes (a reload, a page that ended) and when the app leaves the screen. `scripts/check-torch.sh` checks it on this Mac, with no phone |
 | the camera (the device neuron's `camera`) | grants the web view's camera to the gene's own site only; iOS asks the person once |
 | `link-opened` | a link to the app's URL scheme calls `window.inspo.linkOpened(url)` |
 | a native library's call or event stream (a db neuron of type exotic on a `native://<library>/<name>` endpoint) | `{type: "native", id, url, data, keep, listen}` or `{type: "native", id, stop: true}`; the library's adapter (a `NativeLibrary`, registered with `NativeLibraries.shared`) answers, and the shell keeps only the fields `keep` names before calling `window.inspo.nativeAnswered(id, value)` or `nativeFailed(id, error)` |
@@ -126,7 +127,8 @@ free loopback port, serving that page to its own web view; the engine reads
 `INSPO_DESKTOP_READ` in `INSPO_DESKTOP_PROJECT` with the person's own gcloud
 sign-in, and stops when the app quits. It opens the p viewer first
 (`Config/Desktop.xcconfig`). `NativeLibrary.swift` is shared with the iOS
-shell; a haptic plays on the trackpad.
+shell; a haptic plays on the trackpad, and a torch switches nothing (a Mac
+has no light).
 
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
       -project Shell.xcodeproj -scheme Desktop -configuration Debug build
