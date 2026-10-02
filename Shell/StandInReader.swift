@@ -89,6 +89,8 @@ final class StandInReader: NSObject, BluetoothIDScanner {
     var batteryPercent: Int? { battery }
 
     var pairedDeviceIDs: [String] { ["stand-in"] }
+    /// The stand-in is always connected and still plays a first pairing.
+    var pairsWhileConnected: Bool { true }
 
     func feedback(_ kind: ScannerFeedback, done: @escaping (Error?) -> Void) {
         #if os(iOS)

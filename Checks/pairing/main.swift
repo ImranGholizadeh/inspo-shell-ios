@@ -395,6 +395,24 @@ do {
           kept, ["s: state", "c: {}", "s: pairing looking", "s: pairing failed"])
 }
 
+// MARK: a scanner already connected
+
+do {
+    let (scanner, bench) = recorded(paired: ["A"])
+    scanner.say(.connection("connected"))
+    let answer = bench.call("start-pairing", ["venue": "v1", "door": "d1"])
+    check("with a scanner connected, start-pairing answers failed, already-connected, and the stream says so",
+          [answer] + last(bench.heard, 1), ["pairing failed already-connected", "pairing failed already-connected"])
+    check("and the scanner is asked nothing: the one that works is not dropped", scanner.asked, [])
+    scanner.say(.connection("reading"))
+    check("a scanner that is reading is connected too", [bench.call("start-pairing")], ["pairing failed already-connected"])
+    bench.clock.pass(100)
+    check("no limit of a refused pairing fails later", last(bench.heard, 1), ["pairing failed already-connected"])
+    scanner.say(.connection("disconnected"))
+    check("once it is no longer connected a pairing starts", [bench.call("start-pairing")] + scanner.asked,
+          ["pairing looking", "pair ///"])
+}
+
 // MARK: the stand-in's played pairing
 
 func standIn() -> (StandInReader, Bench) {

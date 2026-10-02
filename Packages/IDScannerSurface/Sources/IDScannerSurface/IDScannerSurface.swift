@@ -36,6 +36,14 @@ public protocol BluetoothIDScanner: AnyObject {
     func pair(_ place: ScannerPlace, done: @escaping (ScannerPairingFailure?) -> Void)
     /// Stops the pairing that runs, and its looking. None runs: nothing happens.
     func stopPairing()
+    /// Whether a pairing may start while a scanner is connected. A scanner's
+    /// package says no (the default below): a pairing would drop the scanner
+    /// that works. Only the test stand-in, which is always connected, says yes.
+    var pairsWhileConnected: Bool { get }
+}
+
+public extension BluetoothIDScanner {
+    var pairsWhileConnected: Bool { false }
 }
 
 /// Where a scanner is paired: the venue and the door as the gene gives

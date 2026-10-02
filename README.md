@@ -85,7 +85,7 @@ stream, each `{kind: "pairing", step}`:
 | `connecting` | 3 s after the first scanner was heard, the adapter picked the one with the strongest signal (the first heard of two equally strong) and connects it | 10 s: `not-connected` |
 | `confirm` | the pick is connected; the person scans any barcode with the scanner in their hand, which the package reads and discards | 30 s: `not-confirmed` |
 | `paired` | the package has kept the pairing; the scanner is connected, as after `reconnect` | |
-| `failed`, with `reason` | one of the three above, or `stopped` (`stop-pairing`), `bluetooth-off`, `bluetooth-not-allowed` | |
+| `failed`, with `reason` | one of the three above, or `stopped` (`stop-pairing`), `bluetooth-off`, `bluetooth-not-allowed`; or `already-connected`, at once and with nothing started, when a scanner is connected (forget it first to pair another) | |
 
 The scan is the guard: a pick that is not the scanner in the person's hand is
 never confirmed, fails as `not-confirmed`, and is forgotten, so the phone is

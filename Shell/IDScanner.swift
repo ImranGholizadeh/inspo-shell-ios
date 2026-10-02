@@ -50,7 +50,9 @@ import UIKit
 //                                      paired, or failed, with the reason:
 //                                      none-found, not-connected,
 //                                      not-confirmed, stopped, bluetooth-off,
-//                                      bluetooth-not-allowed
+//                                      bluetooth-not-allowed; or, refused
+//                                      at once because a scanner is
+//                                      connected, already-connected
 //
 // A first pairing (owner, 2026-10-02: "Nearest scanner, confirm by scan")
 // shows the person no list: the adapter listens for a short window from the
@@ -191,6 +193,15 @@ final class IDScannerAdapter: NativeLibrary {
             if let pairing {
                 // one pairing at a time: the one that runs goes on
                 answer(.success(Self.flat(pairing: pairing.step)))
+                return
+            }
+            // a scanner that is connected is never dropped by a pairing
+            // (owner, 2026-10-02: "The shell refuses it, with a reason"):
+            // nothing starts, and the call and the stream say failed,
+            // already-connected. To change scanners: forget, then pair.
+            if !scanner.pairsWhileConnected, Self.shown(scanner.connection.state) == "connected" {
+                answer(.success(Self.flat(pairing: "failed", reason: "already-connected")))
+                sendPairing("failed", reason: "already-connected")
                 return
             }
             answer(.success(Self.flat(pairing: "looking")))
