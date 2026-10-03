@@ -43,6 +43,8 @@
 				ShellBridge.swift,
 				StandInReader.swift,
 				Torch.swift,
+				HandOver.swift,
+				PhoneHandOver.swift,
 			);
 			target = 1A0000000000000000000110 /* Desktop */;
 		};

@@ -7,9 +7,9 @@ import SwiftUI
 // separate mine, React Native or Swift; 2026-09-29: "if swift is low
 // hanging fruit go for it"). It holds one web view on the gene's page; the
 // Go engine runs the graph and the page draws it, as on the web. The shell
-// adds only what a phone has and a page does not: haptics, the camera, the
-// light, the links that open the app, and native libraries (a vendor's
-// reader).
+// adds only what a phone has and a page does not: haptics and the long
+// vibration, the camera, the light, the share sheet and the clipboard, the
+// links that open the app, and native libraries (a vendor's reader).
 @main
 struct ShellApp: App {
     @ObservedObject private var state = ShellBridge.shared.state

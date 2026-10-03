@@ -16,11 +16,13 @@ final class ShellState: ObservableObject {
 
 // The web view and its bridge. The page (inspo-core-js) talks to the shell
 // through window.webkit.messageHandlers.inspo ({type: "haptic", mode},
-// {type: "torch", mode}: the phone's light, Torch.swift, and
+// {type: "torch", mode}: the phone's light, Torch.swift,
+// {type: "share", id, ...} and {type: "clipboard", id, text}: the share
+// sheet and the clipboard, HandOver.swift, and
 // {type: "native", ...}: a native library's call or stream, NativeLibrary.swift);
 // the shell talks to the page through window.inspo, which the page sets
-// (linkOpened, nativeAnswered, nativeFailed), and what arrives before the
-// page is ready waits in window.inspoWaiting.
+// (linkOpened, nativeAnswered, nativeFailed, deviceAnswered, deviceFailed),
+// and what arrives before the page is ready waits in window.inspoWaiting.
 final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     static let shared = ShellBridge()
     private(set) weak var webView: WKWebView?
@@ -66,6 +68,9 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         view.isInspectable = true // Safari's Web Inspector, on a development build only
         #endif
         webView = view
+        // the phone's own share sheet, shown over the page, and its clipboard
+        HandOver.shared.sheet = { [weak view] in view.map(PhoneShareSheet.init(over:)) }
+        HandOver.shared.clipboard = { PhoneClipboard() }
         // a light the page lit goes out when the app leaves the screen
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                                object: nil, queue: .main) { _ in Torch.shared.putOut() }
@@ -106,6 +111,29 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
             print("shell: the page asked for the torch") // a development build says so; a simulator has no light to show it
             #endif
             Torch.shared.take(mode: body["mode"] as? String ?? "")
+        case "share", "clipboard":
+            // answered once, by the request's id; one with no id has no one to answer
+            guard let id = body["id"] as? String, !id.isEmpty else { return }
+            #if DEBUG
+            print("shell: the page asked for the \(type == "share" ? "share sheet" : "clipboard")") // never what it handed over
+            #endif
+            let answered = { [weak self] in
+                #if DEBUG
+                print("shell: the \(type == "share" ? "share sheet closed" : "clipboard holds the text")")
+                #endif
+                self?.call("deviceAnswered", id)
+            }
+            let failed = { [weak self] (reason: String) in
+                #if DEBUG
+                print("shell: the \(type) failed: \(reason)")
+                #endif
+                self?.call("deviceFailed", id, reason)
+            }
+            if type == "share" {
+                HandOver.shared.share(body, answered: answered, failed: failed)
+            } else {
+                HandOver.shared.copy(body, answered: answered, failed: failed)
+            }
         case "native":
             NativeLibraries.shared.handle(body,
                 answered: { [weak self] id, value in self?.call("nativeAnswered", id, value) },
@@ -115,7 +143,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         }
     }
 
-    /// A haptic's pattern (the device neuron's modes); an unknown one plays nothing.
+    /// A haptic's pattern (the device neuron's modes), or the system's long
+    /// vibration; an unknown one plays nothing.
     private func playHaptic(_ mode: String) {
         switch mode {
         case "light": UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -124,6 +153,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         case "success": UINotificationFeedbackGenerator().notificationOccurred(.success)
         case "warning": UINotificationFeedbackGenerator().notificationOccurred(.warning)
         case "error": UINotificationFeedbackGenerator().notificationOccurred(.error)
+        case "vibrate":
+            #if DEBUG
+            print("shell: the page asked for the long vibration") // a development build says so; a simulator has no motor to show it
+            #endif
+            playLongVibration()
         default: break
         }
     }
