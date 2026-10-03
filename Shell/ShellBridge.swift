@@ -2,9 +2,17 @@
 // Proprietary and confidential.
 
 import IDScannerBinding
+import Network
 import SwiftUI
 import UIKit
 import WebKit
+
+/// What the app shows over its web view: the splash until a page has
+/// loaded, and whether the system says there is no network meanwhile.
+final class ShellState: ObservableObject {
+    @Published var pageLoaded = false
+    @Published var noNetwork = false
+}
 
 // The web view and its bridge. The page (inspo-core-js) talks to the shell
 // through window.webkit.messageHandlers.inspo ({type: "haptic", mode},
@@ -18,6 +26,10 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     private(set) weak var webView: WKWebView?
     private var pending: [String] = [] // calls made before the first page finished loading
     private var loaded = false
+    let state = ShellState()
+    // a page that did not load is loaded again (LoadAgain.swift)
+    private lazy var again = LoadAgain(load: { [weak self] in self?.loadPage() })
+    private let network = NWPathMonitor()
 
     /// The gene's page, from the build's INSPO_URL.
     var startURL: URL? {
@@ -57,10 +69,29 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         // a light the page lit goes out when the app leaves the screen
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                                object: nil, queue: .main) { _ in Torch.shared.putOut() }
-        if let url = startURL {
-            view.load(URLRequest(url: url))
+        // the system's word that the network is back, and the app coming to
+        // the front: a load that waits is tried at once
+        network.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                self?.state.noNetwork = path.status != .satisfied
+                if path.status == .satisfied { self?.again.wake() }
+            }
         }
+        network.start(queue: DispatchQueue.global(qos: .utility))
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification,
+                                               object: nil, queue: .main) { [weak self] _ in self?.again.wake() }
+        loadPage()
         return view
+    }
+
+    /// Loads the gene's page: afresh while none has loaded, else again where it is.
+    private func loadPage() {
+        guard let webView else { return }
+        if state.pageLoaded, webView.url != nil {
+            webView.reload()
+        } else if let url = startURL {
+            webView.load(URLRequest(url: url))
+        }
     }
 
     // MARK: the page asks
@@ -136,13 +167,33 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// again (owner, 2026-09-29: "Recover where it broke").
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
+        state.pageLoaded = false // the splash, not an empty view, until it has loaded again
         NativeLibraries.shared.stopAll() // the page that asked is gone
         Torch.shared.putOut()
-        if webView.url != nil {
-            webView.reload()
-        } else if let url = startURL {
-            webView.load(URLRequest(url: url))
-        }
+        loadPage()
+    }
+
+    /// A page that did not load (the app opened with no signal, or brought
+    /// back by iOS with none): the splash stays, and the load is tried
+    /// again after a wait, and at once when the network is back
+    /// (LoadAgain.swift). A load another load took the place of is no failure.
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        pageDidNotLoad(error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        pageDidNotLoad(error)
+    }
+
+    private func pageDidNotLoad(_ error: Error) {
+        let e = error as NSError
+        if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }
+        #if DEBUG
+        print("shell: the page did not load (\(e.domain) \(e.code)); it is tried again")
+        #endif
+        loaded = false
+        state.pageLoaded = false
+        again.failed()
     }
 
     /// A page loading afresh: the streams the page before asked for end,
@@ -154,6 +205,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
+        again.loaded()
+        state.pageLoaded = true
         let waiting = pending
         pending = []
         waiting.forEach { webView.evaluateJavaScript($0) }
@@ -163,4 +216,33 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
 struct ShellView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView { ShellBridge.shared.makeWebView() }
     func updateUIView(_ view: WKWebView, context: Context) {}
+}
+
+/// The splash, as the launch screen draws it (the launch background and the
+/// mark in its middle; a customer's own where its build lays them over),
+/// kept over the web view until a page has loaded: an app opened with no
+/// signal shows what it showed as it opened, not an empty view. While the
+/// system says there is no network, a small sign near the bottom edge says
+/// so, in no language.
+struct SplashView: View {
+    @ObservedObject var state: ShellState
+    var body: some View {
+        ZStack {
+            Color("LaunchBackground").ignoresSafeArea()
+            Image("LaunchMark")
+            if state.noNetwork {
+                // near the bottom edge, clear of a mark of any size
+                VStack {
+                    Spacer()
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 44)
+                        .accessibilityLabel(Text("No connection"))
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: state.noNetwork)
+    }
 }

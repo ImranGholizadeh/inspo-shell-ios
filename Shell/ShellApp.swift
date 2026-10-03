@@ -12,11 +12,20 @@ import SwiftUI
 // reader).
 @main
 struct ShellApp: App {
+    @ObservedObject private var state = ShellBridge.shared.state
     var body: some Scene {
         WindowGroup {
-            ShellView()
-                .ignoresSafeArea()
-                .onOpenURL { ShellBridge.shared.linkOpened($0) }
+            ZStack {
+                ShellView()
+                    .ignoresSafeArea()
+                // the splash stays until a page has loaded (ShellBridge.swift)
+                if !state.pageLoaded {
+                    SplashView(state: state)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: state.pageLoaded)
+            .onOpenURL { ShellBridge.shared.linkOpened($0) }
         }
     }
 }

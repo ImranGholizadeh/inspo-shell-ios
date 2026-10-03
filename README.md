@@ -20,6 +20,14 @@ phone has. Mobile is a mine of its own, separate from the web mine (owner,
 Calls made before the page is ready wait in `window.inspoWaiting`; the page's
 `app.js` takes them in order.
 
+A page that does not load (the app opened with no signal, or brought back by
+iOS with none) is loaded again by itself: after a wait that doubles from one
+second to fifteen, and at once when iOS says the network is back or the app
+comes to the front (`Shell/LoadAgain.swift`; `scripts/check-load.sh` checks its
+timing on this Mac). Until a page has loaded the app shows its splash, as the
+launch screen draws it, not an empty view; while iOS says there is no network,
+a small sign near the bottom edge says so, in no language.
+
 ## Building
 
 Nothing of a customer is in this repository. `Config/Default.xcconfig` points
