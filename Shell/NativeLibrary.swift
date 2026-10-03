@@ -24,6 +24,11 @@ protocol NativeLibrary: AnyObject {
     /// Runs one call; answers once.
     func call(_ call: String, data: Any?, answer: @escaping (Result<[String: Any], NativeError>) -> Void)
     /// Starts an event stream; each event until the returned stop is called.
+    /// Every event of one endpoint is handed to every stream of it that is
+    /// open, and only the words said to a stream as it opens (where it
+    /// begins) go to that stream alone: the engine counts on it, to tell a
+    /// second copy of an event from a new one when a page holds two streams
+    /// of one endpoint for a moment.
     func listen(_ events: String, data: Any?, each: @escaping ([String: Any]) -> Void,
                 failed: @escaping (NativeError) -> Void) -> () -> Void
 }
