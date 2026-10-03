@@ -3,6 +3,7 @@
 
 import AudioToolbox
 import UIKit
+import UniformTypeIdentifiers
 
 // The phone's own share sheet, clipboard and long vibration: what
 // HandOver.swift and the bridge's haptic reach for. Nothing here decides
@@ -65,9 +66,20 @@ final class PhoneShareSheet: ShareSheet {
     }
 }
 
-/// iOS's clipboard.
+/// iOS's clipboard. A copy is passed to the person's other devices on the
+/// same account and stays until they copy something else; one told how long
+/// it may stay is kept to this phone and expires.
 struct PhoneClipboard: Clipboard {
-    func hold(_ text: String) { UIPasteboard.general.string = text }
+    func hold(_ text: String, forSeconds: Int?) {
+        guard let forSeconds else {
+            UIPasteboard.general.string = text
+            return
+        }
+        UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: text]], options: [
+            .localOnly: true,
+            .expirationDate: Date().addingTimeInterval(TimeInterval(forSeconds)),
+        ])
+    }
 }
 
 /// The system's own long vibration (the haptic's mode vibrate): about 0.4 s

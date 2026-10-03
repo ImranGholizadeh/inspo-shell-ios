@@ -35,7 +35,7 @@ final class RecordedSheet: ShareSheet {
 
 final class RecordedClipboard: Clipboard {
     var held: [String] = []
-    func hold(_ text: String) { held.append(text) }
+    func hold(_ text: String, forSeconds: Int?) { held.append(forSeconds.map { "\(text) for \($0) s, this phone only" } ?? text) }
 }
 
 var passed = 0, failed = 0
@@ -250,6 +250,17 @@ do {
     bench.copy(["type": "clipboard", "id": "c4", "text": String(repeating: "a", count: HandOver.limit + 1)])
     check("no text, an empty text and one too large are not held", bench.clipboard.held + Array(bench.said.dropFirst()),
           ["4821", "failed: a clipboard is given a text", "failed: a clipboard is given a text", "failed: a text is at most 1000000 bytes"])
+    let timed = Bench()
+    timed.copy(["type": "clipboard", "id": "t1", "text": "4821", "forSeconds": 60])
+    timed.copy(["type": "clipboard", "id": "t2", "text": "4821", "forSeconds": 3600])
+    check("a text told how long is held for that long, on this phone only", timed.clipboard.held + timed.said,
+          ["4821 for 60 s, this phone only", "4821 for 3600 s, this phone only", "answered", "answered"])
+    let wrong = Bench()
+    for seconds in [0, 3601, 1.5, "soon", -5] as [Any] {
+        wrong.copy(["type": "clipboard", "id": "t3", "text": "4821", "forSeconds": seconds])
+    }
+    check("a time that is no whole number of seconds from 1 to 3600 is refused, and nothing is held", wrong.clipboard.held + wrong.said,
+          Array(repeating: "failed: a clipboard's forSeconds is a whole number of seconds, from 1 to 3600", count: 5))
     let none = Bench(clipboard: false)
     none.copy(["type": "clipboard", "id": "c5", "text": "4821"])
     check("no clipboard: failed", none.said, ["failed: no clipboard here"])

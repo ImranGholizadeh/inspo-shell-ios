@@ -12,6 +12,8 @@ import Foundation
 //   { type: "share", id, file: { name, mime, text } }   the share sheet with a file: the shell writes
 //                                                       text under name and shares the file
 //   { type: "clipboard", id, text }                     the text put on the clipboard
+//   { type: "clipboard", id, text, forSeconds }         the text held for that many seconds and then
+//                                                       gone, and kept to this phone
 //
 // Each is answered once, by its id: answered when the sheet has closed
 // (whether the person shared or put it away: iOS's word on which is not
@@ -53,7 +55,9 @@ protocol ShareSheet {
 
 /// A clipboard the shell can write: the phone's own, or a test's.
 protocol Clipboard {
-    func hold(_ text: String)
+    /// Holds the text. With forSeconds, for that long and then no more,
+    /// and on this phone only, never passed to the person's other devices.
+    func hold(_ text: String, forSeconds: Int?)
 }
 
 /// The page's share and clipboard requests, each answered once.
@@ -172,12 +176,25 @@ final class HandOver {
         current?.failed = nil
     }
 
-    /// Takes a clipboard request: the text is put on the clipboard.
+    /// The longest a clipboard may be told to hold a text, in seconds (the
+    /// engine's bound).
+    static let clipboardLongest = 3600
+
+    /// Takes a clipboard request: the text is put on the clipboard. Told
+    /// how long (forSeconds: a PIN, a one-time code), the clipboard holds
+    /// it for that long and keeps it to this phone.
     func copy(_ body: [String: Any], answered: @escaping () -> Void, failed: @escaping (String) -> Void) {
         guard let text = body["text"] as? String, !text.isEmpty else { return failed("a clipboard is given a text") }
         guard text.utf8.count <= HandOver.limit else { return failed("a text is at most \(HandOver.limit) bytes") }
+        var seconds: Int?
+        if let given = body["forSeconds"] {
+            guard let whole = given as? Int, (1...HandOver.clipboardLongest).contains(whole) else {
+                return failed("a clipboard's forSeconds is a whole number of seconds, from 1 to \(HandOver.clipboardLongest)")
+            }
+            seconds = whole
+        }
         guard let clipboard = clipboard() else { return failed("no clipboard here") }
-        clipboard.hold(text)
+        clipboard.hold(text, forSeconds: seconds)
         answered()
     }
 
