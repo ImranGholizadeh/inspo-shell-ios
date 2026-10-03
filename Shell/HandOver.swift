@@ -25,8 +25,14 @@ import Foundation
 //
 // A shared file is written under the app's temporary folder, in a folder
 // of its own, and removed when its sheet closes; what an earlier share
-// left (an app ended with its sheet open) is removed when the next begins.
-// Nothing handed over is printed or kept.
+// left (an app ended with its sheet open) is removed when the app opens
+// and when the next share begins. Nothing handed over is printed or kept.
+//
+// One sheet is open at a time, and nothing holds that for ever: a sheet
+// that could not be opened says so, at once or a moment later, and one iOS
+// took down without a word is found gone when the next share asks. A
+// request that arrives twice opens one sheet. A page that loads afresh
+// under an open sheet leaves the sheet to the person and is told nothing.
 
 /// One thing a share sheet is given.
 enum SharedItem: Equatable {
@@ -37,9 +43,12 @@ enum SharedItem: Equatable {
 
 /// A share sheet the shell can open: the phone's own, or a test's.
 protocol ShareSheet {
-    /// Opens the sheet with the items; closed is called once when it has
-    /// closed. False when it could not be opened.
-    func open(_ items: [SharedItem], closed: @escaping () -> Void) -> Bool
+    /// Opens the sheet with the items; ended is called once: with true
+    /// when the sheet has closed, with false when it could not be opened,
+    /// at once or a moment later.
+    func open(_ items: [SharedItem], ended: @escaping (_ shown: Bool) -> Void)
+    /// Whether the sheet this opened is on the screen, or on its way there.
+    var showing: Bool { get }
 }
 
 /// A clipboard the shell can write: the phone's own, or a test's.
@@ -60,11 +69,41 @@ final class HandOver {
     var clipboard: () -> Clipboard? = { nil }
     /// Where shared files are written, each in a folder of its own.
     var folder = FileManager.default.temporaryDirectory.appendingPathComponent("shared", isDirectory: true)
-    private(set) var open = false
 
-    /// Takes a share request. A sheet already open is not opened over.
+    /// The share whose sheet is open: who asked, by the request's id, its
+    /// sheet, the file written for it, and how the page is answered.
+    private final class OpenShare {
+        let id: String
+        let sheet: ShareSheet
+        let written: URL?
+        var answered: (() -> Void)?
+        var failed: ((String) -> Void)?
+        var ended = false
+        init(id: String, sheet: ShareSheet, written: URL?, answered: @escaping () -> Void, failed: @escaping (String) -> Void) {
+            self.id = id
+            self.sheet = sheet
+            self.written = written
+            self.answered = answered
+            self.failed = failed
+        }
+    }
+    private var current: OpenShare?
+    /// Whether a share's sheet is open.
+    var open: Bool { current != nil }
+
+    /// Takes a share request. A sheet already open is not opened over; the
+    /// open share sent again (the engine sends a request again when it
+    /// could not tell that it arrived) is the one being done, and is not
+    /// answered twice.
     func share(_ body: [String: Any], answered: @escaping () -> Void, failed: @escaping (String) -> Void) {
-        guard !open else { return failed("a share sheet is already open") }
+        let id = body["id"] as? String ?? ""
+        if let now = current {
+            if !id.isEmpty, now.id == id { return }
+            // a sheet iOS took down without saying so has closed: the share
+            // before ends here, so one lost answer never holds every share after it
+            guard !now.sheet.showing else { return failed("a share sheet is already open") }
+            end(now, shown: true)
+        }
         clear()
         let text = body["text"] as? String ?? ""
         let link = body["url"] as? String ?? ""
@@ -105,26 +144,32 @@ final class HandOver {
             }
             guard !items.isEmpty else { return failed("a share is given a text, a link or a file") }
         }
-        let remove = { if let written { try? FileManager.default.removeItem(at: written) } }
         guard let sheet = sheet() else {
-            remove()
+            if let written { try? FileManager.default.removeItem(at: written) }
             return failed("nothing here can show a share sheet")
         }
-        open = true
-        var closedOnce = false
-        let shown = sheet.open(items) { [weak self] in
-            guard !closedOnce else { return }
-            closedOnce = true
-            self?.open = false
-            remove()
-            answered()
-        }
-        if !shown && !closedOnce {
-            closedOnce = true
-            open = false
-            remove()
-            failed("the share sheet could not be opened")
-        }
+        let share = OpenShare(id: id, sheet: sheet, written: written, answered: answered, failed: failed)
+        current = share
+        sheet.open(items) { [weak self] shown in self?.end(share, shown: shown) }
+    }
+
+    /// Ends a share, once: its file goes, the next may open, and the page
+    /// that asked is answered (its sheet closed) or told it could not open.
+    private func end(_ share: OpenShare, shown: Bool) {
+        guard !share.ended else { return }
+        share.ended = true
+        if current === share { current = nil }
+        if let written = share.written { try? FileManager.default.removeItem(at: written) }
+        if shown { share.answered?() } else { share.failed?("the share sheet could not be opened") }
+    }
+
+    /// The page that asked is gone (it loads afresh, or its content ended):
+    /// a sheet that is open stays for the person who is in it, its file goes
+    /// when it closes, and no page is answered: the one that loads now never
+    /// asked.
+    func pageGone() {
+        current?.answered = nil
+        current?.failed = nil
     }
 
     /// Takes a clipboard request: the text is put on the clipboard.

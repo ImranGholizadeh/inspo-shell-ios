@@ -12,14 +12,23 @@ import UIKit
 /// iOS's share sheet, shown over the view the page is drawn in.
 final class PhoneShareSheet: ShareSheet {
     private weak var view: UIView?
+    private weak var sheet: UIActivityViewController?
+    private var opening = false
 
     init(over view: UIView) { self.view = view }
 
-    func open(_ items: [SharedItem], closed: @escaping () -> Void) -> Bool {
-        guard let view, var top = view.window?.rootViewController else { return false }
-        while let next = top.presentedViewController { top = next }
+    var showing: Bool { opening || sheet?.presentingViewController != nil }
+
+    func open(_ items: [SharedItem], ended: @escaping (_ shown: Bool) -> Void) {
+        guard let view, var top = view.window?.rootViewController else { return ended(false) }
+        // the controller on top, not counting one on its way out
+        var leaving: UIViewController?
+        while let next = top.presentedViewController {
+            if next.isBeingDismissed { leaving = next; break }
+            top = next
+        }
         // a sheet iOS still shows is not opened over
-        guard !(top is UIActivityViewController) else { return false }
+        guard !(top is UIActivityViewController) else { return ended(false) }
         let things: [Any] = items.map { item in
             switch item {
             case .text(let text): return text
@@ -28,15 +37,31 @@ final class PhoneShareSheet: ShareSheet {
         }
         let sheet = UIActivityViewController(activityItems: things, applicationActivities: nil)
         // shared or put away: iOS says which, and the page is told only that it closed
-        sheet.completionWithItemsHandler = { _, _, _, _ in closed() }
+        sheet.completionWithItemsHandler = { _, _, _, _ in ended(true) }
         // an iPad shows the sheet as a popover, which needs a place: the middle of the page
         if let popover = sheet.popoverPresentationController {
             popover.sourceView = view
             popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
             popover.permittedArrowDirections = []
         }
-        top.present(sheet, animated: true)
-        return true
+        self.sheet = sheet
+        opening = true
+        let present = { [weak self] in
+            top.present(sheet, animated: true)
+            // UIKit refuses a presentation without a word (the controller
+            // under it is not on the screen, or already presents): a sheet
+            // that is not on its way in a moment later was never opened
+            DispatchQueue.main.async {
+                self?.opening = false
+                if sheet.presentingViewController == nil && !sheet.isBeingPresented { ended(false) }
+            }
+        }
+        // a share asked as the sheet before it closes: this one opens when that has gone
+        if let moving = leaving?.transitionCoordinator {
+            moving.animate(alongsideTransition: nil) { _ in present() }
+        } else {
+            present()
+        }
     }
 }
 

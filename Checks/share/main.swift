@@ -8,12 +8,18 @@
 import Foundation
 
 /// A sheet that records what it was opened with, reads a file it is given
-/// while it is open, and closes when the check says.
+/// while it is open, and closes when the check says; it can refuse to open,
+/// at once or a moment later, and can be gone without a word.
 final class RecordedSheet: ShareSheet {
     var opened: [String] = []
     var opens = true
-    var close: (() -> Void)?
-    func open(_ items: [SharedItem], closed: @escaping () -> Void) -> Bool {
+    var showing = false
+    private var ended: ((Bool) -> Void)?
+    /// Closes the open sheet, as iOS does when the person shares or puts it away.
+    var close: (() -> Void)? { ended.map { end in { self.showing = false; end(true) } } }
+    /// Says a moment later that the sheet was never opened.
+    var refuse: (() -> Void)? { ended.map { end in { self.showing = false; end(false) } } }
+    func open(_ items: [SharedItem], ended: @escaping (_ shown: Bool) -> Void) {
         opened.append(items.map { item in
             switch item {
             case .text(let text): return "text \(text)"
@@ -21,9 +27,9 @@ final class RecordedSheet: ShareSheet {
             case .file(let url): return "file \(url.lastPathComponent) = \((try? String(contentsOf: url, encoding: .utf8)) ?? "unreadable")"
             }
         }.joined(separator: " | "))
-        guard opens else { return false }
-        close = closed
-        return true
+        guard opens else { return ended(false) }
+        showing = true
+        self.ended = ended
     }
 }
 
@@ -63,13 +69,13 @@ final class Bench {
     deinit { try? FileManager.default.removeItem(at: over.folder) }
 }
 
-let csv: [String: Any] = ["name": "Test venue 2026-09-29.csv", "mime": "text/csv", "text": "venue,in\nTest venue,12\n"]
+let csv: [String: Any] = ["name": "North hall 2026-10-01.csv", "mime": "text/csv", "text": "place,in\nNorth hall,12\n"]
 
 do {
     let bench = Bench()
     bench.share(["type": "share", "id": "f1", "file": csv])
-    check("a file is written under its name and the sheet opens with it", bench.sheet.opened, ["file Test venue 2026-09-29.csv = venue,in\nTest venue,12\n"])
-    check("nothing is answered while the sheet is open", bench.said + bench.files, ["Test venue 2026-09-29.csv"])
+    check("a file is written under its name and the sheet opens with it", bench.sheet.opened, ["file North hall 2026-10-01.csv = place,in\nNorth hall,12\n"])
+    check("nothing is answered while the sheet is open", bench.said + bench.files, ["North hall 2026-10-01.csv"])
     bench.sheet.close?()
     check("the sheet closed: answered", bench.said, ["share answered"])
     check("and the file is removed", bench.files, [])
@@ -79,14 +85,14 @@ do {
 
 do {
     let bench = Bench()
-    bench.share(["type": "share", "id": "w1", "text": "Last night: 12 in", "url": "https://example.test/night?date=2026-09-29"])
+    bench.share(["type": "share", "id": "w1", "text": "Yesterday: 12 in", "url": "https://example.test/count?date=2026-10-01"])
     bench.sheet.close?()
     bench.share(["type": "share", "id": "w2", "text": "Only words"])
     bench.sheet.close?()
     bench.share(["type": "share", "id": "w3", "url": "https://example.test/"])
     bench.sheet.close?()
     check("a text and a link, a text alone, a link alone", bench.sheet.opened,
-          ["text Last night: 12 in | link https://example.test/night?date=2026-09-29", "text Only words", "link https://example.test/"])
+          ["text Yesterday: 12 in | link https://example.test/count?date=2026-10-01", "text Only words", "link https://example.test/"])
     check("each answered when its sheet closed", bench.said, ["share answered", "share answered", "share answered"])
     check("no file is written for words", bench.files, [])
 }
@@ -95,8 +101,8 @@ do {
     let bench = Bench()
     bench.share(["type": "share", "id": "a", "file": csv], as: "first")
     bench.share(["type": "share", "id": "b", "text": "second"], as: "second")
-    check("a sheet already open is not opened over", bench.said + bench.sheet.opened, ["second failed: a share sheet is already open", "file Test venue 2026-09-29.csv = venue,in\nTest venue,12\n"])
-    check("and the first share's file stays for its sheet", bench.files, ["Test venue 2026-09-29.csv"])
+    check("a sheet already open is not opened over", bench.said + bench.sheet.opened, ["second failed: a share sheet is already open", "file North hall 2026-10-01.csv = place,in\nNorth hall,12\n"])
+    check("and the first share's file stays for its sheet", bench.files, ["North hall 2026-10-01.csv"])
     bench.sheet.close?()
     bench.share(["type": "share", "id": "c", "text": "third"], as: "third")
     bench.sheet.close?()
@@ -111,7 +117,7 @@ do {
     try? Data("old".utf8).write(to: left.appendingPathComponent("old.csv"))
     check("a file an earlier share left", bench.files, ["old.csv"])
     bench.share(["type": "share", "id": "n", "file": csv])
-    check("is removed when the next share begins", bench.files, ["Test venue 2026-09-29.csv"])
+    check("is removed when the next share begins", bench.files, ["North hall 2026-10-01.csv"])
     bench.sheet.close?()
 }
 
@@ -185,6 +191,54 @@ do {
     bench.share(["type": "share", "id": "y", "text": "again"])
     bench.sheet.close?()
     check("and the next share opens", bench.said, ["share failed: the share sheet could not be opened", "share answered"])
+}
+
+do {
+    // a sheet that said it opened and a moment later was not: failed, the file gone, the next opens
+    let bench = Bench()
+    bench.share(["type": "share", "id": "x", "file": csv], as: "first")
+    bench.sheet.refuse?()
+    check("a sheet refused a moment later: failed, and no file is left", bench.said + bench.files, ["first failed: the share sheet could not be opened"])
+    bench.share(["type": "share", "id": "y", "text": "again"], as: "second")
+    bench.sheet.close?()
+    check("and the next share opens", bench.said, ["first failed: the share sheet could not be opened", "second answered"])
+}
+
+do {
+    // a sheet iOS took down without a word: the next share finds it gone, ends it, and opens
+    let bench = Bench()
+    bench.share(["type": "share", "id": "a", "file": csv], as: "first")
+    bench.sheet.showing = false
+    bench.share(["type": "share", "id": "b", "text": "second"], as: "second")
+    check("a sheet gone without a word ends when the next share asks, and its file goes", bench.said + bench.files, ["first answered"])
+    check("and the next share opens", bench.sheet.opened.count == 2 ? ["2"] : bench.sheet.opened, ["2"])
+    bench.sheet.close?()
+    check("each answered once", bench.said, ["first answered", "second answered"])
+}
+
+do {
+    // the open share sent again is the one being done: one sheet, one answer
+    let bench = Bench()
+    bench.share(["type": "share", "id": "same", "file": csv], as: "first")
+    bench.share(["type": "share", "id": "same", "file": csv], as: "again")
+    check("a request that arrives twice opens one sheet and fails nothing", [String(bench.sheet.opened.count)] + bench.said + bench.files, ["1", "North hall 2026-10-01.csv"])
+    bench.sheet.close?()
+    check("and is answered once", bench.said, ["first answered"])
+}
+
+do {
+    // the page loads afresh under an open sheet: the sheet stays, no page is answered, the file goes when it closes
+    let bench = Bench()
+    bench.share(["type": "share", "id": "a", "file": csv], as: "first")
+    bench.over.pageGone()
+    check("the sheet stays open for the person, with its file", [String(bench.over.open)] + bench.files, ["true", "North hall 2026-10-01.csv"])
+    bench.share(["type": "share", "id": "b", "text": "from the new page"], as: "second")
+    check("the new page's share is told at once", bench.said, ["second failed: a share sheet is already open"])
+    bench.sheet.close?()
+    check("the page that loaded is not answered for a share it never asked, and the file is gone", bench.said + bench.files, ["second failed: a share sheet is already open"])
+    bench.share(["type": "share", "id": "c", "text": "third"], as: "third")
+    bench.sheet.close?()
+    check("and the next share opens", bench.said, ["second failed: a share sheet is already open", "third answered"])
 }
 
 do {

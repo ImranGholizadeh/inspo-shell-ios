@@ -77,6 +77,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         // the phone's own share sheet, shown over the page, and its clipboard
         HandOver.shared.sheet = { [weak view] in view.map(PhoneShareSheet.init(over:)) }
         HandOver.shared.clipboard = { PhoneClipboard() }
+        HandOver.shared.clear() // a file an app that ended with its sheet open left
         // a light the page lit goes out when the app leaves the screen
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                                object: nil, queue: .main) { _ in Torch.shared.putOut() }
@@ -210,6 +211,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         state.pageLoaded = false // the splash, not an empty view, until it has loaded again
         NativeLibraries.shared.stopAll() // the page that asked is gone
         Torch.shared.putOut()
+        HandOver.shared.pageGone()
         loadPage()
     }
 
@@ -237,10 +239,12 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     }
 
     /// A page loading afresh: the streams the page before asked for end,
-    /// and a light it lit goes out.
+    /// a light it lit goes out, and a share sheet it opened is the
+    /// person's to finish, answered to no one.
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         NativeLibraries.shared.stopAll()
         Torch.shared.putOut()
+        HandOver.shared.pageGone()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
