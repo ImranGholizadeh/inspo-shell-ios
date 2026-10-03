@@ -83,10 +83,10 @@ do {
     bench.sheet.close?()
     bench.share(["type": "share", "id": "w2", "text": "Only words"])
     bench.sheet.close?()
-    bench.share(["type": "share", "id": "w3", "url": "http://example.test/"])
+    bench.share(["type": "share", "id": "w3", "url": "https://example.test/"])
     bench.sheet.close?()
     check("a text and a link, a text alone, a link alone", bench.sheet.opened,
-          ["text Last night: 12 in | link https://example.test/night?date=2026-09-29", "text Only words", "link http://example.test/"])
+          ["text Last night: 12 in | link https://example.test/night?date=2026-09-29", "text Only words", "link https://example.test/"])
     check("each answered when its sheet closed", bench.said, ["share answered", "share answered", "share answered"])
     check("no file is written for words", bench.files, [])
 }
@@ -119,12 +119,23 @@ for (name, body, why) in [
     ("nothing", ["type": "share", "id": "x"] as [String: Any], "a share is given a text, a link or a file"),
     ("a file and a text", ["type": "share", "id": "x", "text": "hello", "file": csv], "a share is a file, or a text and a link, not both"),
     ("a file and a link", ["type": "share", "id": "x", "url": "https://example.test", "file": csv], "a share is a file, or a text and a link, not both"),
-    ("a link to the phone's own file", ["type": "share", "id": "x", "url": "file:///etc/passwd"], "a share's link is an http or https address"),
-    ("a link that is a script", ["type": "share", "id": "x", "url": "javascript:alert(1)"], "a share's link is an http or https address"),
-    ("a link to a file by a host's name", ["type": "share", "id": "x", "url": "file://localhost/etc/passwd"], "a share's link is an http or https address"),
-    ("a link of another kind", ["type": "share", "id": "x", "url": "ftp://example.test/a"], "a share's link is an http or https address"),
-    ("a link with no host", ["type": "share", "id": "x", "url": "https://"], "a share's link is an http or https address"),
-    ("a link with a space", ["type": "share", "id": "x", "url": "https://example.test/a b"], "a share's link is an http or https address"),
+    ("a link to the phone's own file", ["type": "share", "id": "x", "url": "file:///etc/passwd"], "a share's link is an https address, with no user or password in it"),
+    ("a link that is a script", ["type": "share", "id": "x", "url": "javascript:alert(1)"], "a share's link is an https address, with no user or password in it"),
+    ("a link to a file by a host's name", ["type": "share", "id": "x", "url": "file://localhost/etc/passwd"], "a share's link is an https address, with no user or password in it"),
+    ("a link of another kind", ["type": "share", "id": "x", "url": "ftp://example.test/a"], "a share's link is an https address, with no user or password in it"),
+    ("a link with no host", ["type": "share", "id": "x", "url": "https://"], "a share's link is an https address, with no user or password in it"),
+    ("a link with a space", ["type": "share", "id": "x", "url": "https://example.test/a b"], "a share's link is an https address, with no user or password in it"),
+    ("a link read in the clear", ["type": "share", "id": "x", "url": "http://example.test/a"], "a share's link is an https address, with no user or password in it"),
+    ("a link that signs in", ["type": "share", "id": "x", "url": "https://someone:secret@example.test/a"], "a share's link is an https address, with no user or password in it"),
+    ("a link with a user", ["type": "share", "id": "x", "url": "https://someone@example.test/a"], "a share's link is an https address, with no user or password in it"),
+    ("a link too long", ["type": "share", "id": "x", "url": "https://example.test/?d=" + String(repeating: "a", count: HandOver.linkLimit)], "a link is at most 2048 bytes"),
+    ("a file that is a page", ["type": "share", "id": "x", "file": ["name": "a.html", "mime": "text/html", "text": "1"]], "a file's mime is a type a share's file may have"),
+    ("a file a phone installs", ["type": "share", "id": "x", "file": ["name": "a.mobileconfig", "mime": "application/x-apple-aspen-config", "text": "1"]], "a file's mime is a type a share's file may have"),
+    ("a file with no type", ["type": "share", "id": "x", "file": ["name": "a.csv", "text": "1"]], "a file's mime is a type a share's file may have"),
+    ("a name that ends otherwise", ["type": "share", "id": "x", "file": ["name": "report.html", "mime": "text/csv", "text": "1"]], "a file's name ends as its type does"),
+    ("a name with no ending", ["type": "share", "id": "x", "file": ["name": "report", "mime": "text/csv", "text": "1"]], "a file's name ends as its type does"),
+    ("a name that is its ending", ["type": "share", "id": "x", "file": ["name": ".csv", "mime": "text/csv", "text": "1"]], "a file's name ends as its type does"),
+    ("a name turned round", ["type": "share", "id": "x", "file": ["name": "a\u{202E}vsc.html", "mime": "text/csv", "text": "1"]], "a file's name is a plain file name"),
     ("a file above its folder", ["type": "share", "id": "x", "file": ["name": "../out.csv", "mime": "text/csv", "text": "1"]], "a file's name is a plain file name"),
     ("a file in a folder", ["type": "share", "id": "x", "file": ["name": "a/b.csv", "mime": "text/csv", "text": "1"]], "a file's name is a plain file name"),
     ("a file named ..", ["type": "share", "id": "x", "file": ["name": "..", "mime": "text/csv", "text": "1"]], "a file's name is a plain file name"),
@@ -144,6 +155,19 @@ do {
     bench.share(["type": "share", "id": "x", "file": ["name": "a.csv", "mime": "text/csv", "text": String(repeating: "a", count: HandOver.limit)]])
     check("a file of exactly the limit is shared", [String(bench.sheet.opened.count)] + bench.said, ["1"])
     bench.sheet.close?()
+}
+
+do {
+    // a link of exactly the limit, and each type under a name that ends as it does, in either case
+    let bench = Bench()
+    let link = "https://example.test/?d=" + String(repeating: "a", count: HandOver.linkLimit - "https://example.test/?d=".utf8.count)
+    bench.share(["type": "share", "id": "l", "url": link])
+    bench.sheet.close?()
+    for (name, mime) in [("Counts.CSV", "text/csv"), ("rows.tsv", "text/tab-separated-values"), ("notes.txt", "text/plain"), ("notes.md", "text/markdown"), ("rows.json", "application/json")] {
+        bench.share(["type": "share", "id": name, "file": ["name": name, "mime": mime, "text": "1"]])
+        bench.sheet.close?()
+    }
+    check("a link of exactly the limit and each type a file may have are shared", [String(bench.sheet.opened.count)] + bench.said, ["6"] + Array(repeating: "share answered", count: 6))
 }
 
 do {
