@@ -12,13 +12,22 @@
 public protocol BluetoothIDScanner: AnyObject {
     /// Configures the package; the adapter calls it once, before anything else.
     func configure(_ policy: ScannerPolicy) throws
-    /// The connection's state now, and the paired scanner's id if one is paired.
+    /// The connection's state now, the paired scanner's id if one is paired,
+    /// and why the scanner is not connected when the package says.
     var connection: ScannerConnection { get }
+    /// Bluetooth on this phone now, as far as the binding can say. A binding
+    /// that cannot say leaves the default below: unknown.
+    var bluetooth: ScannerBluetooth { get }
     /// The battery's percent, if the scanner has said.
     var batteryPercent: Int? { get }
     /// The ids of the scanners paired with this phone.
     var pairedDeviceIDs: [String] { get }
     func feedback(_ kind: ScannerFeedback, done: @escaping (Error?) -> Void)
+    /// Connects a scanner. done is called once: nil when it is connected, or
+    /// why it could not be. A paired scanner that is away or switched off is
+    /// waited for with no time limit (the phone connects it when it is
+    /// heard again), and done waits with it; while it waits the package's
+    /// state is connecting.
     func connect(_ deviceID: String, done: @escaping (Error?) -> Void)
     func forget(_ deviceID: String, done: @escaping (Error?) -> Void)
     /// The app came back to the foreground: the package reconnects fast.
@@ -44,6 +53,30 @@ public protocol BluetoothIDScanner: AnyObject {
 
 public extension BluetoothIDScanner {
     var pairsWhileConnected: Bool { false }
+    var bluetooth: ScannerBluetooth { .unknown }
+}
+
+/// Bluetooth on this phone: on, switched off, not allowed for this app by
+/// the person or the phone's rules, or not known (not yet said, or no
+/// Bluetooth at all, as on a simulator).
+public enum ScannerBluetooth {
+    case on, off, notAllowed, unknown
+}
+
+/// Why a scanner is not connected, as far as its package can say. A package
+/// that cannot tell a scanner switched off from one out of range says out
+/// of range for both.
+public enum ScannerAway {
+    case bluetoothOff, bluetoothNotAllowed, outOfRange, switchedOff, unknown
+}
+
+/// What a package warns of that a gene may act on.
+public enum ScannerWarning {
+    /// the scanner is set to type as a keyboard: it connects to the phone,
+    /// not to this app, until it is set back
+    case keyboardMode
+    /// the scanner's battery is nearly empty
+    case lowBattery
 }
 
 /// Where a scanner is paired: the venue and the door as the gene gives
@@ -87,10 +120,13 @@ public struct ScannerPolicy {
 public struct ScannerConnection {
     public var state: String
     public var deviceID: String?
+    /// why the scanner is not connected, when the package says
+    public var away: ScannerAway?
 
-    public init(state: String, deviceID: String?) {
+    public init(state: String, deviceID: String?, away: ScannerAway? = nil) {
         self.state = state
         self.deviceID = deviceID
+        self.away = away
     }
 }
 
@@ -104,15 +140,20 @@ public enum ScannerLibraryEvent {
     case result(ScannerResult)
     /// a result the package suppressed as a repeat
     case duplicate(ScannerResult)
-    case connection(String)
+    /// the connection's state changed; with why the scanner is not
+    /// connected, when the package says
+    case connection(String, away: ScannerAway? = nil)
     case battery(Int)
+    /// Bluetooth on this phone changed
+    case bluetooth(ScannerBluetooth)
+    case warning(ScannerWarning)
     /// a scanner heard while a pairing looks: its id, and its signal in
     /// dBm (nearer to zero is stronger), smoothed by the package
     case found(deviceID: String, signal: Int)
     /// a pairing's picked scanner is connected, and the package waits for
     /// the confirming scan
     case confirming
-    /// reporting and warnings: not passed on
+    /// reporting and the package's other warnings: not passed on
     case unpassed
 }
 

@@ -13,5 +13,5 @@ xcrun swiftc -parse-as-library -module-name IDScannerSurface \
   -emit-module -emit-module-path "$out/IDScannerSurface.swiftmodule" -emit-object -o "$out/surface.o" \
   Packages/IDScannerSurface/Sources/IDScannerSurface/IDScannerSurface.swift
 xcrun swiftc -I "$out" -o "$out/pairing-check" "$out/surface.o" \
-  Shell/NativeLibrary.swift Shell/IDScanner.swift Shell/StandInReader.swift Checks/pairing/main.swift
+  Shell/NativeLibrary.swift Shell/IDScanner.swift Shell/StandInReader.swift Checks/Bench.swift Checks/pairing/main.swift
 "$out/pairing-check"
