@@ -39,6 +39,7 @@ final class RecordedClipboard: Clipboard {
 }
 
 var passed = 0, failed = 0
+func last(_ list: [String], _ count: Int) -> [String] { Array(list.suffix(count)) }
 func check(_ name: String, _ got: [String], _ want: [String]) {
     if got == want { passed += 1 } else { failed += 1; print("FAIL \(name):\n  got  \(got)\n  want \(want)") }
 }
@@ -264,6 +265,127 @@ do {
     let none = Bench(clipboard: false)
     none.copy(["type": "clipboard", "id": "c5", "text": "4821"])
     check("no clipboard: failed", none.said, ["failed: no clipboard here"])
+}
+
+// MARK: a sheet that comes up a moment after it is asked
+
+/// A clock the check moves: work waits until its time is passed.
+final class Clock {
+    private var now = 0.0
+    private var count = 0
+    private var waiting: [(at: Double, id: Int, work: () -> Void)] = []
+    func later(_ seconds: TimeInterval, _ work: @escaping () -> Void) {
+        count += 1
+        waiting.append((now + seconds, count, work))
+    }
+    func pass(_ seconds: Double) {
+        let end = now + seconds + 1e-9
+        while let next = waiting.filter({ $0.at <= end }).min(by: { ($0.at, $0.id) < ($1.at, $1.id) }) {
+            waiting.removeAll { $0.id == next.id }
+            now = next.at
+            next.work()
+        }
+        now = end
+    }
+}
+
+/// A sheet that comes as the phone's does: asked now, up after its delay
+/// (never, with none), judged by SheetArrival on the check's clock, and
+/// closed when the check says.
+final class LateSheet: ShareSheet {
+    let clock: Clock
+    var comesAfter: Double?
+    var up = false
+    var files: [String] = []
+    private var arrival: SheetArrival?
+    private var ended: ((Bool) -> Void)?
+    init(_ clock: Clock, comesAfter: Double?) { self.clock = clock; self.comesAfter = comesAfter }
+    var showing: Bool { arrival?.waiting == true || up }
+    func open(_ items: [SharedItem], ended: @escaping (_ shown: Bool) -> Void) {
+        self.ended = ended
+        arrival = SheetArrival(up: { self.up }, later: clock.later, never: { ended(false) })
+        if let comesAfter { clock.later(comesAfter) { self.up = true } }
+    }
+    func close() { up = false; arrival?.came(); ended?(true) }
+}
+
+do {
+    let clock = Clock()
+    var up = false, never = 0
+    let arrival = SheetArrival(up: { up }, later: clock.later, never: { never += 1 })
+    clock.pass(0.25)
+    check("a sheet that is not up a quarter of a second after it was asked is still on its way",
+          [String(arrival.waiting), String(never)], ["true", "0"])
+    up = true
+    clock.pass(0.1)
+    check("seen up a third of a second after it was asked, it came: it is never called never opened",
+          [String(arrival.waiting), String(arrival.gaveUp), String(never)], ["false", "false", "0"])
+    clock.pass(100)
+    check("and nothing is said of it later", [String(never)], ["0"])
+}
+
+do {
+    let clock = Clock()
+    var never = 0
+    let arrival = SheetArrival(up: { false }, later: clock.later, never: { never += 1 })
+    clock.pass(SheetArrival.longest - 0.05)
+    check("a sheet that does not come is waited for as long as a sheet may take", [String(arrival.waiting), String(never)], ["true", "0"])
+    clock.pass(0.1)
+    check("and is then never opened, said once", [String(arrival.waiting), String(arrival.gaveUp), String(never)], ["false", "true", "1"])
+    clock.pass(100)
+    check("once only", [String(never)], ["1"])
+    check("the longest a sheet may take is five seconds, looked for every tenth", [String(SheetArrival.longest), String(SheetArrival.every)], ["5.0", "0.1"])
+}
+
+do {
+    let clock = Clock()
+    var never = 0
+    let arrival = SheetArrival(up: { false }, later: clock.later, never: { never += 1 })
+    clock.pass(0.2)
+    arrival.came() // its presentation finished, or it closed, before it was seen up
+    clock.pass(100)
+    check("a sheet that says itself that it came is never called never opened", [String(arrival.waiting), String(arrival.gaveUp), String(never)],
+          ["false", "false", "0"])
+}
+
+do {
+    let bench = Bench(sheet: false)
+    let clock = Clock()
+    let sheet = LateSheet(clock, comesAfter: 0.3)
+    bench.over.sheet = { sheet }
+    bench.share(["type": "share", "id": "late1", "file": csv])
+    clock.pass(0.05)
+    check("a file's sheet on its way: the page is told nothing yet, and the file is there", bench.said + bench.files, ["North hall 2026-10-01.csv"])
+    bench.share(["type": "share", "id": "late2", "text": "North hall: 12 inside"], as: "second")
+    check("a share asked while it is on its way is told a sheet is open, and opens nothing", bench.said, ["second failed: a share sheet is already open"])
+    clock.pass(1)
+    check("up a third of a second after it was asked: still nothing said, the file still there while the sheet is open",
+          [String(sheet.up)] + last(bench.said, 1) + bench.files, ["true", "second failed: a share sheet is already open", "North hall 2026-10-01.csv"])
+    clock.pass(100)
+    check("however long the person keeps it open", [String(bench.said.count)] + bench.files, ["1", "North hall 2026-10-01.csv"])
+    sheet.close()
+    check("closed: the page is answered, once, and the file is gone", last(bench.said, 1) + bench.files + [String(bench.over.open)], ["share answered", "false"])
+    clock.pass(100)
+    check("and nothing more is said", [String(bench.said.count)], ["2"])
+}
+
+do {
+    let bench = Bench(sheet: false)
+    let clock = Clock()
+    let sheet = LateSheet(clock, comesAfter: nil)
+    bench.over.sheet = { sheet }
+    bench.share(["type": "share", "id": "never1", "file": csv])
+    clock.pass(SheetArrival.longest - 0.05)
+    check("a sheet UIKit refused without a word: nothing said while it may still come", bench.said + bench.files, ["North hall 2026-10-01.csv"])
+    clock.pass(0.1)
+    check("not up after the longest a sheet may take: the page is told it could not be opened, and the file goes",
+          bench.said + bench.files + [String(bench.over.open)], ["share failed: the share sheet could not be opened", "false"])
+    let next = LateSheet(clock, comesAfter: 0.3)
+    bench.over.sheet = { next }
+    bench.share(["type": "share", "id": "never2", "text": "North hall: 12 inside"], as: "next")
+    clock.pass(1)
+    next.close()
+    check("and the next share opens: nothing is held for ever", last(bench.said, 1), ["next answered"])
 }
 
 print("share: \(passed) passed, \(failed) failed")

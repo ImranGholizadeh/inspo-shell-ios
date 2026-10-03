@@ -14,11 +14,14 @@ import UniformTypeIdentifiers
 final class PhoneShareSheet: ShareSheet {
     private weak var view: UIView?
     private weak var sheet: UIActivityViewController?
-    private var opening = false
+    /// Whether the sheet asked for came up, while that is not yet known.
+    private var arrival: SheetArrival?
+    /// A sheet that waits for the one before it to go.
+    private var queued = false
 
     init(over view: UIView) { self.view = view }
 
-    var showing: Bool { opening || sheet?.presentingViewController != nil }
+    var showing: Bool { queued || arrival?.waiting == true || sheet?.presentingViewController != nil }
 
     func open(_ items: [SharedItem], ended: @escaping (_ shown: Bool) -> Void) {
         guard let view, var top = view.window?.rootViewController else { return ended(false) }
@@ -38,7 +41,10 @@ final class PhoneShareSheet: ShareSheet {
         }
         let sheet = UIActivityViewController(activityItems: things, applicationActivities: nil)
         // shared or put away: iOS says which, and the page is told only that it closed
-        sheet.completionWithItemsHandler = { _, _, _, _ in ended(true) }
+        sheet.completionWithItemsHandler = { [weak self] _, _, _, _ in
+            self?.arrival?.came()
+            ended(true)
+        }
         // an iPad shows the sheet as a popover, which needs a place: the middle of the page
         if let popover = sheet.popoverPresentationController {
             popover.sourceView = view
@@ -46,15 +52,24 @@ final class PhoneShareSheet: ShareSheet {
             popover.permittedArrowDirections = []
         }
         self.sheet = sheet
-        opening = true
+        queued = true
         let present = { [weak self] in
-            top.present(sheet, animated: true)
+            guard let self else { return ended(false) }
+            self.queued = false
             // UIKit refuses a presentation without a word (the controller
-            // under it is not on the screen, or already presents): a sheet
-            // that is not on its way in a moment later was never opened
-            DispatchQueue.main.async {
-                self?.opening = false
-                if sheet.presentingViewController == nil && !sheet.isBeingPresented { ended(false) }
+            // under it is not on the screen, or already presents), and iOS
+            // puts a share sheet up a moment after it is asked: the sheet
+            // is looked for until it is up, and is never opened only when
+            // it is still not up after the longest a sheet may take
+            let arrival = SheetArrival(up: { [weak sheet] in
+                guard let sheet else { return false }
+                return sheet.presentingViewController != nil || sheet.isBeingPresented
+            }, never: { ended(false) })
+            self.arrival = arrival
+            top.present(sheet, animated: true) { [weak sheet] in
+                // one that comes after it was given up is taken down again:
+                // its page was told it could not open, and its file is gone
+                if arrival.gaveUp { sheet?.dismiss(animated: false) } else { arrival.came() }
             }
         }
         // a share asked as the sheet before it closes: this one opens when that has gone

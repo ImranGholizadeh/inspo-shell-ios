@@ -31,8 +31,10 @@ import Foundation
 // and when the next share begins. Nothing handed over is printed or kept.
 //
 // One sheet is open at a time, and nothing holds that for ever: a sheet
-// that could not be opened says so, at once or a moment later, and one iOS
-// took down without a word is found gone when the next share asks. A
+// that could not be opened says so, at once or when it has not come up in
+// the time a sheet may take (SheetArrival: a sheet on its way is waited
+// for, and its file kept), and one iOS took down without a word is found
+// gone when the next share asks. A
 // request that arrives twice opens one sheet. A page that loads afresh
 // under an open sheet leaves the sheet to the person and is told nothing.
 
@@ -47,10 +49,76 @@ enum SharedItem: Equatable {
 protocol ShareSheet {
     /// Opens the sheet with the items; ended is called once: with true
     /// when the sheet has closed, with false when it could not be opened,
-    /// at once or a moment later.
+    /// at once or when it has not come up in the time a sheet may take
+    /// (SheetArrival), never while it is on its way.
     func open(_ items: [SharedItem], ended: @escaping (_ shown: Bool) -> Void)
     /// Whether the sheet this opened is on the screen, or on its way there.
     var showing: Bool { get }
+}
+
+/// Whether a sheet that was asked for has come up. UIKit refuses a
+/// presentation without a word (the controller under it is not on the
+/// screen, or already presents), so a sheet that never comes must be found
+/// out; and iOS puts a share sheet up a moment after it is asked (a third of
+/// a second on iOS 26), so one that is not up yet is not one that never
+/// came. A sheet is looked for from the next turn on, every tenth of a
+/// second, and is called never opened only when it is still not up after
+/// the longest a sheet may take; one that is seen up, or says itself that
+/// it came or closed, is never called so. Told once, either way.
+final class SheetArrival {
+    /// The longest a sheet may take to come up, and how often it is looked
+    /// for, in seconds.
+    static let longest: TimeInterval = 5
+    static let every: TimeInterval = 0.1
+
+    /// Runs work after some seconds, on the main queue. A check passes the
+    /// time itself.
+    static let onMain: (TimeInterval, @escaping () -> Void) -> Void = { seconds, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    private let up: () -> Bool
+    private let later: (TimeInterval, @escaping () -> Void) -> Void
+    private var never: (() -> Void)?
+    /// How many times it was looked for and not yet up.
+    private var looks = 0
+    /// Whether it is still not known: neither seen up nor given up.
+    private(set) var waiting = true
+    /// Whether it was given up: a sheet that comes after this is too late,
+    /// and is taken down again by whoever opened it.
+    private(set) var gaveUp = false
+
+    /// up says whether the sheet is on the screen or on its way in; never
+    /// is called once if it is still not after the longest it may take.
+    init(up: @escaping () -> Bool, later: @escaping (TimeInterval, @escaping () -> Void) -> Void = SheetArrival.onMain,
+         never: @escaping () -> Void) {
+        self.up = up
+        self.later = later
+        self.never = never
+        later(0) { self.look() }
+    }
+
+    /// The sheet came (its presentation finished, or it has closed, which
+    /// only a sheet that came can do).
+    func came() {
+        waiting = false
+        never = nil
+    }
+
+    private func look() {
+        guard waiting else { return }
+        if up() { return came() }
+        guard Double(looks) * Self.every < Self.longest else {
+            waiting = false
+            gaveUp = true
+            let never = self.never
+            self.never = nil
+            never?()
+            return
+        }
+        looks += 1
+        later(Self.every) { self.look() }
+    }
 }
 
 /// A clipboard the shell can write: the phone's own, or a test's.
