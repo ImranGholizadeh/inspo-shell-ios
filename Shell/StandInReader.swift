@@ -55,7 +55,8 @@ import UIKit
 //                     warning again until back
 //   low-battery       the battery at 8 percent, and the warning
 //   unpaired          no scanner is paired with this phone (a first pairing
-//                     pairs the stand-in again)
+//                     pairs the stand-in again): the stream's state event
+//                     says paired 0 at once, whatever the state was
 //   paired            the stand-in as it starts: paired and connected
 
 final class StandInReader: NSObject, BluetoothIDScanner {
@@ -247,7 +248,7 @@ final class StandInReader: NSObject, BluetoothIDScanner {
             keyboard = false
             stopArriving()
             connection.deviceID = nil
-            if connection.state != "idle" { emit(.connection("idle")) }
+            emit(.connection("idle")) // said even when idle already, so the adapter tells that none is paired
             answerWaiting(StandInError.notConnected)
         default:
             break

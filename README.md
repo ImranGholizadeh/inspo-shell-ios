@@ -61,7 +61,7 @@ stand-in takes for itself (on a simulator: `xcrun simctl openurl booted
 | `back` | Bluetooth is on and allowed again and the scanner is near: a scanner that is waited for connects in under a second |
 | `keyboard-mode` | the scanner is set to type as a keyboard: the warning, the link drops, and a connection meets the warning again until `back` |
 | `low-battery` | the battery at 8 percent, and the warning |
-| `unpaired` | no scanner is paired with this phone (a first pairing pairs the stand-in again) |
+| `unpaired` | no scanner is paired with this phone (a first pairing pairs the stand-in again); the stream's state event says `paired` 0 at once, whatever the state was |
 | `paired` | the stand-in as it starts: paired and connected |
 
 ### A customer's brand: its icon and its splash
@@ -138,7 +138,7 @@ the same shape.
 | `forget` (call) | forgets the paired scanner the package's status names |
 | `start-pairing` (call, data `{venue, door, doorName}`, each optional) | starts pairing a scanner this phone has never used, and answers at once with `{kind: "pairing", step}`: `looking`, or the step of the pairing that already runs, which goes on. The data is where the scanner is paired; the package keeps it with the pairing, on the phone, beside iOS's id of the phone for the app's maker, which the shell adds |
 | `stop-pairing` (call) | stops the pairing that runs |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`, and `reason` when the scanner is not connected: a real connection change, at once; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode` or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode` or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
 
 The adapter configures the package once, on first use: its age and expiry
 checks on, its duplicate window as delivered, reporting off the phone never
@@ -151,7 +151,14 @@ A gene's scanner pill must say within a second whether this phone has a
 scanner and whether it is there (the first customer's request Q011), so:
 
 - **`paired`** comes with every `state` answer, from the package's own list of
-  paired scanners, read at the call.
+  paired scanners, read at the call, and with every `state` event on the
+  stream, the same number. A state event is sent when only `paired` has
+  changed: when the scanner is forgotten, when a first pairing is paired
+  (after the pairing's last step), and, for a scanner unpaired in the phone's
+  own settings, of which the package says nothing, when the app next comes
+  to the front. A gene whose stream keeps `paired` needs no state call to
+  know a scanner was unpaired while its page was open; one that does not
+  keep it hears what it heard before.
 - **The state while a paired scanner is away is `reconnecting`.** The phone
   waits for a paired scanner with no time limit and connects it when it is
   heard again; the package's state while it waits is `connecting`, the same

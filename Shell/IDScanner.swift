@@ -48,7 +48,8 @@ import UIKit
 //     issueCode }                                                  (the first issue, if any)
 //   { kind: "duplicate", result }      a result the scanner suppressed as a
 //                                      repeat, with only its kind (read, ...)
-//   { kind: "state", state, reason }   a real connection change, at once:
+//   { kind: "state", state, paired, reason }
+//                                      a real connection change, at once:
 //                                      idle, scanning, connecting, connected,
 //                                      reconnecting, disconnected; the
 //                                      package's reading during each scan is
@@ -56,7 +57,10 @@ import UIKit
 //                                      'reading' back"); and again when only
 //                                      the reason has changed (Bluetooth
 //                                      switched off or back on while the
-//                                      scanner was away)
+//                                      scanner was away), or only paired (a
+//                                      scanner forgotten, unpaired outside
+//                                      the app, or just paired); paired is
+//                                      the state call's, 1 or 0, on every one
 //   { kind: "battery", battery }       the percent
 //   { kind: "warning", warning }       keyboard-mode: the scanner is set to
 //                                      type as a keyboard and cannot be
@@ -111,10 +115,11 @@ final class IDScannerAdapter: NativeLibrary {
     private var watching: (() -> Void)?
     private var scanListener: (() -> Void)?
     private var foreground: NSObjectProtocol?
-    /// The last state the streams heard, and its reason, so a held-back
-    /// reading never shows as a change.
+    /// The last state the streams heard, its reason and whether a scanner
+    /// was paired, so a held-back reading never shows as a change.
     private var heardState: String?
     private var heardReason: String?
+    private var heardPaired: Bool?
     /// Why the scanner was last lost, as the package said it: kept while
     /// the package waits for it, until it is connected again or forgotten.
     private var lost: ScannerAway?
@@ -181,7 +186,7 @@ final class IDScannerAdapter: NativeLibrary {
                 #if os(iOS)
                 foreground = NotificationCenter.default.addObserver(
                     forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
-                ) { [weak self] _ in self?.scanner.becameActive() }
+                ) { [weak self] _ in self?.cameToFront() }
                 #endif
             } catch {
                 configured = .failure(NativeError(message: "configure: \(error)"))
@@ -189,6 +194,15 @@ final class IDScannerAdapter: NativeLibrary {
         }
         if case .failure(let err) = configured { return err }
         return nil
+    }
+
+    /// The app has come to the front: the package is told, and the streams
+    /// are, if what a state event says is no longer what they heard (a
+    /// scanner unpaired in the phone's own settings while the app was
+    /// behind, of which the package says nothing).
+    func cameToFront() {
+        scanner.becameActive()
+        tellState()
     }
 
     // MARK: calls
@@ -333,8 +347,7 @@ final class IDScannerAdapter: NativeLibrary {
     /// The state call's answer, and a reconnect's that does not wait.
     private func stateAnswer() -> [String: Any] {
         let state = shownNow()
-        var value = Self.flat(state: state, reason: reason(state))
-        value["paired"] = paired ? 1 : 0
+        var value = Self.flat(state: state, paired: paired, reason: reason(state))
         if let battery = scanner.batteryPercent { value["battery"] = battery }
         return value
     }
@@ -384,17 +397,20 @@ final class IDScannerAdapter: NativeLibrary {
         }
     }
 
-    /// Tells the streams the connection's state when it, or why the scanner
-    /// is not connected, is not what they last heard: only a real change
-    /// (reading is connected, and a scan's connected after it is no change).
+    /// Tells the streams the connection's state when it, why the scanner
+    /// is not connected, or whether one is paired, is not what they last
+    /// heard: only a real change (reading is connected, and a scan's
+    /// connected after it is no change).
     private func tellState() {
         guard !sinks.isEmpty else { return }
         let state = shownNow()
         let why = reason(state)
-        guard state != heardState || why != heardReason else { return }
+        let bound = paired
+        guard state != heardState || why != heardReason || bound != heardPaired else { return }
         heardState = state
         heardReason = why
-        let value = Self.flat(state: state, reason: why)
+        heardPaired = bound
+        let value = Self.flat(state: state, paired: bound, reason: why)
         sinks.values.forEach { $0(value) }
     }
 
@@ -415,7 +431,8 @@ final class IDScannerAdapter: NativeLibrary {
         let now = shownNow()
         heardState = now
         heardReason = reason(now)
-        each(Self.flat(state: now, reason: heardReason)) // where the stream begins
+        heardPaired = paired
+        each(Self.flat(state: now, paired: paired, reason: heardReason)) // where the stream begins
         if let pairing { each(Self.flat(pairing: pairing.step)) } // and a pairing that runs
         return { [weak self] in
             guard let self else { return }
@@ -424,6 +441,7 @@ final class IDScannerAdapter: NativeLibrary {
                 // the page has gone: nothing is listening, nothing is read
                 self.heardState = nil
                 self.heardReason = nil
+                self.heardPaired = nil
                 self.stopReading()
             }
         }
@@ -527,6 +545,7 @@ final class IDScannerAdapter: NativeLibrary {
         case nil:
             endPairing()
             sendPairing("paired")
+            tellState() // the state is what it was, and a scanner is paired now
         case .bluetoothOff:
             failPairing("bluetooth-off", run)
         case .bluetoothNotAllowed:
@@ -611,8 +630,10 @@ final class IDScannerAdapter: NativeLibrary {
         }
     }
 
-    static func flat(state: String, reason: String?) -> [String: Any] {
-        var value: [String: Any] = ["kind": "state", "state": state]
+    /// A state, as the call answers it and as the stream tells it: paired
+    /// is a number, 1 or 0.
+    static func flat(state: String, paired: Bool, reason: String?) -> [String: Any] {
+        var value: [String: Any] = ["kind": "state", "state": state, "paired": paired ? 1 : 0]
         if let reason { value["reason"] = reason }
         return value
     }

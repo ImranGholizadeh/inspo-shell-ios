@@ -104,21 +104,21 @@ do {
 
 do {
     let (scanner, bench) = bench(paired: ["A"], state: "connected")
-    check("a stream begins with the state", bench.heard, ["kind=state state=connected"])
+    check("a stream begins with the state", bench.heard, ["kind=state paired=1 state=connected"])
     scanner.say(.connection("reconnecting", away: .outOfRange))
     scanner.say(.connection("connecting"))
     check("the link drops: one state event at once, reconnecting, out of range; the package's connecting adds none",
-          last(bench.heard, 2), ["kind=state state=connected", "kind=state reason=out-of-range state=reconnecting"])
+          last(bench.heard, 2), ["kind=state paired=1 state=connected", "kind=state paired=1 reason=out-of-range state=reconnecting"])
     scanner.say(.bluetooth(.off))
     check("Bluetooth goes off while it is away: a state event at once, with the new reason", last(bench.heard, 1),
-          ["kind=state reason=bluetooth-off state=reconnecting"])
+          ["kind=state paired=1 reason=bluetooth-off state=reconnecting"])
     check("and nothing is asked of the scanner while Bluetooth is off", scanner.asked, [])
     scanner.say(.bluetooth(.on))
     check("Bluetooth comes back: the scanner is asked for again, since the phone's wait ended with Bluetooth",
-          scanner.asked + last(bench.heard, 1), ["connect A", "kind=state reason=out-of-range state=reconnecting"])
+          scanner.asked + last(bench.heard, 1), ["connect A", "kind=state paired=1 reason=out-of-range state=reconnecting"])
     scanner.say(.connection("connected"))
     scanner.answerConnects()
-    check("the scanner comes back: connected, at once", last(bench.heard, 1), ["kind=state state=connected"])
+    check("the scanner comes back: connected, at once", last(bench.heard, 1), ["kind=state paired=1 state=connected"])
     let count = bench.heard.count
     scanner.say(.connection("reading"))
     scanner.say(.connection("connected"))
@@ -132,28 +132,28 @@ do {
     scanner.say(.bluetooth(.off))
     scanner.say(.connection("reconnecting", away: .bluetoothOff))
     check("Bluetooth goes off under a connected scanner: one event, reconnecting, bluetooth-off", last(bench.heard, 2),
-          ["kind=state state=connected", "kind=state reason=bluetooth-off state=reconnecting"])
+          ["kind=state paired=1 state=connected", "kind=state paired=1 reason=bluetooth-off state=reconnecting"])
     scanner.say(.bluetooth(.on))
     scanner.say(.connection("connecting"))
     scanner.say(.connection("connected"))
     scanner.answerConnects()
     check("and back on: it is asked for, waited for, and connected", scanner.asked + last(bench.heard, 2),
-          ["connect A", "kind=state reason=unknown state=reconnecting", "kind=state state=connected"])
+          ["connect A", "kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 state=connected"])
 }
 
 do {
     let (scanner, bench) = bench(paired: ["A"])
     scanner.say(.bluetooth(.on))
     check("the binding's first word of Bluetooth, on, asks for nothing and tells nothing new", scanner.asked + bench.heard,
-          ["kind=state reason=unknown state=idle"])
+          ["kind=state paired=1 reason=unknown state=idle"])
     scanner.say(.bluetooth(.notAllowed))
     check("Bluetooth refused: a state event at once, with the reason", last(bench.heard, 1),
-          ["kind=state reason=bluetooth-not-allowed state=idle"])
+          ["kind=state paired=1 reason=bluetooth-not-allowed state=idle"])
     let (none, empty) = Checks.bench()
     none.say(.bluetooth(.off))
     none.say(.bluetooth(.on))
     check("with no scanner paired, Bluetooth going off and on asks and tells nothing", none.asked + empty.heard,
-          ["kind=state state=idle"])
+          ["kind=state paired=0 state=idle"])
 }
 
 do {
@@ -164,7 +164,7 @@ do {
     bench.clock.pass(3)
     scanner.say(.connection("connecting"))
     check("while a first pairing connects its pick, connecting is connecting, though a scanner is paired",
-          last(bench.heard, 2), ["kind=pairing step=connecting", "kind=state state=connecting"])
+          last(bench.heard, 2), ["kind=pairing step=connecting", "kind=state paired=1 state=connecting"])
 }
 
 do {
@@ -175,7 +175,7 @@ do {
     scanner.say(.warning(.lowBattery))
     scanner.say(.unpassed)
     check("a scanner in keyboard mode and a low battery are warnings on the stream; the battery is an event; nothing else passes",
-          last(bench.heard, 4), ["kind=warning warning=keyboard-mode", "kind=state reason=unknown state=disconnected",
+          last(bench.heard, 4), ["kind=warning warning=keyboard-mode", "kind=state paired=1 reason=unknown state=disconnected",
                                  "battery=9 kind=battery", "kind=warning warning=low-battery"])
 }
 
@@ -202,14 +202,14 @@ do {
     let first = bench.call("reconnect")
     check("reconnect with no data waits for the connection, as ever: no answer while the scanner is away",
           [first] + scanner.asked + bench.answered, ["no answer", "connect A"])
-    check("and the stream says the scanner is waited for", last(bench.heard, 1), ["kind=state reason=unknown state=reconnecting"])
+    check("and the stream says the scanner is waited for", last(bench.heard, 1), ["kind=state paired=1 reason=unknown state=reconnecting"])
     scanner.say(.connection("connecting"))
     bench.clock.pass(100)
     check("it waits as long as the scanner is away", bench.answered, [])
     scanner.say(.connection("connected"))
     scanner.answerConnects()
     check("and answers when it is connected, with the empty answer it always gave", bench.answered + last(bench.heard, 1),
-          ["{}", "kind=state state=connected"])
+          ["{}", "kind=state paired=1 state=connected"])
     _ = bench.call("reconnect", ["wait": 1])
     scanner.answerConnects(Refused())
     check("a connection that fails is the call's error, as ever", last(bench.answered, 1), ["error: Refused()"])
@@ -220,12 +220,12 @@ do {
     let answer = bench.call("reconnect", ["wait": 0])
     check("reconnect with wait 0 answers at once with the state it moved to, in the state call's shape",
           [answer] + scanner.asked, ["kind=state paired=1 reason=unknown state=reconnecting", "connect A"])
-    check("and the stream hears it", last(bench.heard, 1), ["kind=state reason=unknown state=reconnecting"])
+    check("and the stream hears it", last(bench.heard, 1), ["kind=state paired=1 reason=unknown state=reconnecting"])
     scanner.say(.connection("connecting"))
     scanner.say(.connection("connected"))
     scanner.answerConnects()
     check("the connection comes on the stream, and the call is not answered twice", bench.answered + last(bench.heard, 1),
-          ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state state=connected"])
+          ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 state=connected"])
     let again = bench.call("reconnect", ["wait": false])
     check("a scanner that is connected is asked nothing: connected, at once", [again] + scanner.asked,
           ["kind=state paired=1 state=connected", "connect A"])
@@ -236,7 +236,7 @@ do {
     _ = bench.call("reconnect", ["wait": 0])
     scanner.answerConnects(Refused())
     check("a connection that cannot be made: the stream says the scanner is no longer waited for", last(bench.heard, 2),
-          ["kind=state reason=unknown state=reconnecting", "kind=state reason=unknown state=idle"])
+          ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 reason=unknown state=idle"])
 }
 
 do {
@@ -247,7 +247,7 @@ do {
           ["kind=state paired=1 reason=bluetooth-off state=idle"])
     scanner.say(.bluetooth(.on))
     check("and the scanner is asked for when Bluetooth is back, with no tap", scanner.asked + last(bench.heard, 1),
-          ["connect A", "kind=state reason=unknown state=reconnecting"])
+          ["connect A", "kind=state paired=1 reason=unknown state=reconnecting"])
 }
 
 do {
@@ -261,14 +261,78 @@ do {
     _ = bench.call("reconnect", ["wait": 0])
     let forgot = bench.call("forget")
     scanner.say(.connection("disconnected", away: .unknown))
-    check("forget: the scanner is forgotten, paired is 0, and the stream says disconnected",
+    check("forget: the scanner is forgotten, paired is 0, and the stream says disconnected, with paired 0",
           [forgot, bench.call("state")] + last(scanner.asked, 1) + last(bench.heard, 1),
-          ["{}", "kind=state paired=0 reason=unknown state=disconnected", "forget A", "kind=state reason=unknown state=disconnected"])
+          ["{}", "kind=state paired=0 reason=unknown state=disconnected", "forget A", "kind=state paired=0 reason=unknown state=disconnected"])
     scanner.paired = ["B"]
     scanner.answerConnects(Refused()) // the forgotten scanner's connection, answered late
     check("a connection asked before the forget counts for nothing after it: not waited for, and the next one is",
           [bench.call("state"), bench.call("reconnect", ["wait": 0])],
           ["kind=state paired=1 reason=unknown state=disconnected", "kind=state paired=1 reason=unknown state=reconnecting"])
+}
+
+// MARK: paired on the stream's state events
+
+do {
+    let (_, bench) = bench(paired: ["A"], state: "connected")
+    var json = ""
+    let stop = bench.adapter.listen("events", data: nil, each: { value in
+        if json.isEmpty, let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) {
+            json = String(data: data, encoding: .utf8) ?? ""
+        }
+    }, failed: { _ in })
+    stop()
+    check("a state event says paired as the state call does: a number, not true or false", [json],
+          [#"{"kind":"state","paired":1,"state":"connected"}"#])
+    let (_, none) = Checks.bench()
+    check("and 0 where no scanner is paired, from the stream's first event", none.heard, ["kind=state paired=0 state=idle"])
+}
+
+do {
+    let (scanner, bench) = bench(paired: ["A"], state: "connected")
+    scanner.say(.connection("disconnected", away: .unknown))
+    let count = bench.heard.count
+    let forgot = bench.call("forget")
+    check("a scanner forgotten while it is disconnected: the state and its reason are what they were, and a state event says paired 0 at once",
+          [forgot] + Array(bench.heard.suffix(from: count)), ["{}", "kind=state paired=0 reason=unknown state=disconnected"])
+}
+
+do {
+    let (scanner, bench) = bench(paired: ["A"], state: "connected")
+    scanner.say(.connection("disconnected", away: .outOfRange))
+    scanner.paired = [] // unpaired in the phone's own settings: the package says nothing of it
+    let count = bench.heard.count
+    bench.adapter.cameToFront()
+    check("a scanner unpaired outside the app is told when the app comes to the front: paired 0, the state as it was",
+          Array(bench.heard.suffix(from: count)), ["kind=state paired=0 reason=out-of-range state=disconnected"])
+    bench.adapter.cameToFront()
+    check("and coming to the front with nothing changed tells nothing", [String(bench.heard.count - count)], ["1"])
+}
+
+do {
+    let (scanner, bench) = bench()
+    _ = bench.call("start-pairing")
+    scanner.hear("A", -60)
+    bench.clock.pass(3)
+    scanner.say(.connection("connected"))
+    scanner.connectDone?(nil)
+    scanner.say(.confirming)
+    check("a pick that is connected and not yet confirmed is no paired scanner", last(bench.heard, 2),
+          ["kind=state paired=0 state=connected", "kind=pairing step=confirm"])
+    scanner.paired = ["A"]
+    scanner.pairDone?(nil)
+    check("once the pairing is paired, a state event says paired 1, though the state is what it was", last(bench.heard, 2),
+          ["kind=pairing step=paired", "kind=state paired=1 state=connected"])
+}
+
+do {
+    let reader = StandInReader()
+    reader.play("away") // a phone opened with its scanner away: paired, idle
+    let bench = Bench(reader, written: fields)
+    reader.wait = bench.clock.wait
+    reader.play("unpaired")
+    check("the stand-in unpaired while it is idle: the state is idle still, and a state event says paired 0",
+          last(bench.heard, 2), ["kind=state paired=1 reason=unknown state=idle", "kind=state paired=0 state=idle"])
 }
 
 // MARK: the stand-in's scenes
@@ -284,10 +348,10 @@ func standIn() -> (StandInReader, Bench) {
 do {
     let (reader, bench) = standIn()
     check("the stand-in starts paired and connected", [bench.call("state")] + bench.heard,
-          ["battery=90 kind=state paired=1 state=connected", "kind=state state=connected"])
+          ["battery=90 kind=state paired=1 state=connected", "kind=state paired=1 state=connected"])
     reader.play("away")
     check("away: the link drops, and the scanner is waited for", [bench.call("state")] + last(bench.heard, 1),
-          ["battery=90 kind=state paired=1 reason=out-of-range state=reconnecting", "kind=state reason=out-of-range state=reconnecting"])
+          ["battery=90 kind=state paired=1 reason=out-of-range state=reconnecting", "kind=state paired=1 reason=out-of-range state=reconnecting"])
     let count = bench.heard.count
     reader.press()
     bench.clock.pass(100)
@@ -295,10 +359,10 @@ do {
           ["0", "battery=90 kind=state paired=1 reason=out-of-range state=reconnecting"])
     reader.play("back")
     bench.clock.pass(0.7)
-    check("back: it is not connected before its time", last(bench.heard, 1), ["kind=state reason=out-of-range state=reconnecting"])
+    check("back: it is not connected before its time", last(bench.heard, 1), ["kind=state paired=1 reason=out-of-range state=reconnecting"])
     bench.clock.pass(0.1)
     check("and is connected in under a second, with no tap", [bench.call("state")] + last(bench.heard, 1),
-          ["battery=90 kind=state paired=1 state=connected", "kind=state state=connected"])
+          ["battery=90 kind=state paired=1 state=connected", "kind=state paired=1 state=connected"])
     reader.press()
     check("and scans again", [String(last(bench.heard, 1)[0].hasPrefix("dateOfBirth="))], ["true"])
 }
@@ -310,40 +374,40 @@ do {
     reader.wait = bench.clock.wait
     check("away as the app opens: a phone opened with its scanner away, paired, idle, nothing asked",
           [bench.call("state")] + bench.heard,
-          ["battery=90 kind=state paired=1 reason=unknown state=idle", "kind=state reason=unknown state=idle"])
+          ["battery=90 kind=state paired=1 reason=unknown state=idle", "kind=state paired=1 reason=unknown state=idle"])
     check("its opening reconnect answers at once that the scanner is waited for", [bench.call("reconnect", ["wait": 0])] + last(bench.heard, 1),
-          ["battery=90 kind=state paired=1 reason=unknown state=reconnecting", "kind=state reason=unknown state=reconnecting"])
+          ["battery=90 kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 reason=unknown state=reconnecting"])
     bench.clock.pass(100)
     reader.play("back")
     bench.clock.pass(0.8)
     check("and the scanner connects when it is back, with no tap", last(bench.heard, 2),
-          ["kind=state reason=unknown state=reconnecting", "kind=state state=connected"])
+          ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 state=connected"])
 }
 
 do {
     let (reader, bench) = standIn()
     reader.play("bluetooth-off")
-    check("Bluetooth off: the link drops, with the reason", last(bench.heard, 1), ["kind=state reason=bluetooth-off state=reconnecting"])
+    check("Bluetooth off: the link drops, with the reason", last(bench.heard, 1), ["kind=state paired=1 reason=bluetooth-off state=reconnecting"])
     check("a reconnect that waits fails while Bluetooth is off; one with wait 0 says why",
           [bench.call("reconnect"), bench.call("reconnect", ["wait": 0])],
           ["error: bluetoothUnavailable", "battery=90 kind=state paired=1 reason=bluetooth-off state=reconnecting"])
     reader.play("back")
     bench.clock.pass(0.8)
     check("back: Bluetooth is on, and the scanner connects by itself", last(bench.heard, 2),
-          ["kind=state reason=unknown state=reconnecting", "kind=state state=connected"])
+          ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 state=connected"])
 }
 
 do {
     let (reader, bench) = standIn()
     reader.play("away")
     reader.play("bluetooth-off")
-    check("away, then Bluetooth off: the reason is Bluetooth", last(bench.heard, 1), ["kind=state reason=bluetooth-off state=reconnecting"])
+    check("away, then Bluetooth off: the reason is Bluetooth", last(bench.heard, 1), ["kind=state paired=1 reason=bluetooth-off state=reconnecting"])
     reader.play("back")
     check("back: the reason is the scanner's again until it connects", last(bench.heard, 1),
-          ["kind=state reason=out-of-range state=reconnecting"])
+          ["kind=state paired=1 reason=out-of-range state=reconnecting"])
     bench.clock.pass(0.8)
     check("the wait Bluetooth ended is asked for again by the adapter, and the scanner connects", last(bench.heard, 1),
-          ["kind=state state=connected"])
+          ["kind=state paired=1 state=connected"])
     let alone = StandInReader()
     let clock = Clock()
     alone.wait = clock.wait
@@ -362,14 +426,14 @@ do {
     reader.play("bluetooth-refused")
     check("Bluetooth refused: disconnected, with the reason", [bench.call("state")] + last(bench.heard, 1),
           ["battery=90 kind=state paired=1 reason=bluetooth-not-allowed state=disconnected",
-           "kind=state reason=bluetooth-not-allowed state=disconnected"])
+           "kind=state paired=1 reason=bluetooth-not-allowed state=disconnected"])
 }
 
 do {
     let (reader, bench) = standIn()
     reader.play("keyboard-mode")
     check("keyboard mode: the warning, and the link drops", last(bench.heard, 2),
-          ["kind=warning warning=keyboard-mode", "kind=state reason=unknown state=disconnected"])
+          ["kind=warning warning=keyboard-mode", "kind=state paired=1 reason=unknown state=disconnected"])
     let answer = bench.call("reconnect", ["wait": 0])
     check("a reconnect meets the keyboard again: the warning again, and still disconnected", [answer] + last(bench.heard, 1),
           ["battery=90 kind=state paired=1 reason=unknown state=disconnected", "kind=warning warning=keyboard-mode"])
@@ -377,7 +441,7 @@ do {
     _ = bench.call("reconnect", ["wait": 0])
     bench.clock.pass(0.8)
     check("set back, a reconnect connects it", last(bench.heard, 2),
-          ["kind=state reason=unknown state=reconnecting", "kind=state state=connected"])
+          ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 state=connected"])
     reader.play("low-battery")
     check("low battery: the percent and the warning", [bench.call("state")] + last(bench.heard, 2),
           ["battery=8 kind=state paired=1 state=connected", "battery=8 kind=battery", "kind=warning warning=low-battery"])
@@ -386,16 +450,18 @@ do {
 do {
     let (reader, bench) = standIn()
     reader.play("unpaired")
-    check("unpaired: no scanner, paired 0, no reason, and a reconnect fails", [bench.call("state"), bench.call("reconnect", ["wait": 0])] + last(bench.heard, 1),
-          ["battery=90 kind=state paired=0 state=idle", "error: reconnect: no paired scanner", "kind=state state=idle"])
+    check("unpaired: no scanner, paired 0, no reason, on the stream as in the call, and a reconnect fails",
+          [bench.call("state"), bench.call("reconnect", ["wait": 0])] + last(bench.heard, 1),
+          ["battery=90 kind=state paired=0 state=idle", "error: reconnect: no paired scanner", "kind=state paired=0 state=idle"])
     _ = bench.call("start-pairing")
     bench.clock.pass(1)
     bench.clock.pass(3)
     bench.clock.pass(0.8)
     reader.press()
     bench.clock.pass(0.5)
-    check("a first pairing pairs the stand-in again", [bench.call("state")] + last(bench.heard, 1),
-          ["battery=90 kind=state paired=1 state=connected", "kind=pairing step=paired"])
+    check("a first pairing pairs the stand-in again, and the stream says paired 1 after the pairing's last step",
+          [bench.call("state")] + last(bench.heard, 2),
+          ["battery=90 kind=state paired=1 state=connected", "kind=pairing step=paired", "kind=state paired=1 state=connected"])
     reader.play("unpaired")
     reader.play("paired")
     bench.clock.pass(0.8)

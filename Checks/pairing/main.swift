@@ -28,8 +28,8 @@ do {
     scanner.say(.connection("connected"))
     scanner.pairDone?(nil)
     check("the steps come on the stream in order, among the states, and no scanner heard is passed on", bench.heard,
-          ["state idle", "pairing looking", "state scanning", "pairing connecting", "state connecting",
-           "state connected", "pairing confirm", "pairing paired"])
+          ["state idle +paired", "pairing looking", "state scanning +paired", "pairing connecting", "state connecting +paired",
+           "state connected +paired", "pairing confirm", "pairing paired"])
     check("the scanner is asked to pair at the gene's place (the phone is the shell's to say: none on a Mac), then to connect the pick, and nothing else",
           scanner.asked, ["pair v1/d1/Front door/", "connect A"])
     bench.clock.pass(100)
@@ -158,7 +158,7 @@ do {
     let (scanner, bench) = recorded()
     let idle = bench.call("stop-pairing")
     check("stop-pairing with no pairing answers, and asks and tells nothing", [idle] + scanner.asked + bench.heard,
-          ["{}", "state idle"])
+          ["{}", "state idle +paired"])
     _ = bench.call("start-pairing")
     let stopped = bench.call("stop-pairing")
     check("stop-pairing while it looks: failed, stopped, and no scanner to forget",
@@ -196,7 +196,7 @@ do {
     let second = bench.call("start-pairing", ["venue": "other"])
     check("a second start-pairing answers the step of the one that runs", [second], ["pairing connecting"])
     check("and starts nothing: the scanner is asked to pair once, the stream hears no second looking",
-          scanner.asked + bench.heard, ["pair ///", "connect A", "state idle", "pairing looking", "pairing connecting"])
+          scanner.asked + bench.heard, ["pair ///", "connect A", "state idle +paired", "pairing looking", "pairing connecting"])
     scanner.connectDone?(nil)
     scanner.say(.confirming)
     scanner.pairDone?(nil)
@@ -241,7 +241,7 @@ do {
     bench.clock.pass(3)
     bench.open()
     check("a stream opened while a pairing runs hears its step after its first state", bench.heard,
-          ["state scanning", "pairing connecting"])
+          ["state scanning +paired", "pairing connecting"])
 }
 
 do {
@@ -293,11 +293,11 @@ do {
     _ = bench.call("start-pairing")
     bench.clock.pass(1)
     bench.clock.pass(2.9)
-    check("the stand-in looks for a second, and the window runs", bench.heard, ["state connected", "pairing looking"])
+    check("the stand-in looks for a second, and the window runs", bench.heard, ["state connected +paired", "pairing looking"])
     bench.clock.pass(0.1)
     bench.clock.pass(0.8)
     check("the stand-in's near scanner is picked and connects, and it waits for the confirming scan", last(bench.heard, 4),
-          ["pairing connecting", "state connecting", "state connected", "pairing confirm"])
+          ["pairing connecting", "state connecting +paired", "state connected +paired", "pairing confirm"])
     reader.press()
     bench.clock.pass(0.5)
     check("a press while it waits is the confirming scan: paired, and no scan is played", last(bench.heard, 2),
@@ -322,7 +322,7 @@ do {
     _ = bench.call("stop-pairing")
     bench.clock.pass(100)
     check("stopped while the stand-in connects: failed, stopped, and its link is back", last(bench.heard, 4),
-          ["pairing connecting", "state connecting", "state connected", "pairing failed stopped"])
+          ["pairing connecting", "state connecting +paired", "state connected +paired", "pairing failed stopped"])
     let state = bench.call("state")
     let again = bench.call("reconnect")
     check("the stand-in stays paired and connected after a failed pairing", [state, again], ["state connected +battery+paired", "{}"])
