@@ -481,7 +481,11 @@ do {
     _ = bench.call("stop-reading")
     count = bench.heard.count
     scanner.say(.result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"])))
-    check("reading stopped: a scan is unread again, whatever its kind", Array(bench.heard[count...]), ["kind=unread"])
+    scanner.say(.result(ScannerResult(kind: .failedValidation, holder: one.holder, issueCodes: ["EXPIRED"])))
+    scanner.say(.result(ScannerResult(kind: .failedValidation, holder: nil, issueCodes: ["NOT_AAMVA"])))
+    scanner.say(.duplicate(ScannerResult(kind: .failedValidation, holder: one.holder, issueCodes: ["EXPIRED"])))
+    check("reading stopped: a scan is unread again, whatever its kind, with or without a holder",
+          Array(bench.heard[count...]), ["kind=unread", "kind=unread", "kind=unread", "kind=unread"])
     count = bench.heard.count
     scanner.say(.battery(60))
     scanner.say(.connection("reading"))
@@ -496,6 +500,72 @@ do {
     let count = bench.heard.count
     reader.press()
     check("the stand-in's press while nothing reads", Array(bench.heard[count...]), ["kind=unread"])
+}
+
+do {
+    // no stream open: nothing is said, and nothing is kept for a stream that opens later
+    let scanner = RecordedScanner()
+    scanner.paired = ["A"]
+    scanner.state = "connected"
+    scanner.deviceID = "A"
+    let bench = Bench(scanner, stream: false, written: fields)
+    _ = bench.call("state") // first use: the adapter hears the scanner from here on
+    let one = ScannerResult(kind: .read, holder: nil, issueCodes: [])
+    scanner.say(.result(one))
+    scanner.say(.result(one))
+    bench.open()
+    check("a scan made with no stream open is told to none, and none is kept for a stream that opens later",
+          bench.heard, ["kind=state paired=1 state=connected"])
+    // two streams: each hears it once
+    var second: [String] = []
+    let stop = bench.adapter.listen("events", data: nil, each: { second.append(fields($0)) }, failed: { _ in })
+    let count = bench.heard.count
+    second = []
+    scanner.say(.result(one))
+    check("two streams open: each hears one", Array(bench.heard[count...]) + second, ["kind=unread", "kind=unread"])
+    stop()
+}
+
+do {
+    // the app behind (the scanner goes on working there): unread scans are not handed to a page that is not shown
+    let (scanner, bench) = bench(paired: ["A"], state: "connected")
+    let one = ScannerResult(kind: .read, holder: nil, issueCodes: [])
+    bench.adapter.wentBehind()
+    var count = bench.heard.count
+    for _ in 0..<40 { scanner.say(.result(one)) }
+    check("forty scans nobody reads, made while the app is behind: none is handed over", Array(bench.heard[count...]), [])
+    bench.adapter.cameToFront()
+    check("the app comes to the front: one unread says scans were made, however many", Array(bench.heard[count...]), ["kind=unread"])
+    count = bench.heard.count
+    bench.adapter.cameToFront()
+    check("and it is said once", Array(bench.heard[count...]), [])
+    scanner.say(.result(one))
+    check("in front again, a scan nobody reads is told as it is made", Array(bench.heard[count...]), ["kind=unread"])
+    // reading started before the app came back: nothing is owed
+    bench.adapter.wentBehind()
+    scanner.say(.result(one))
+    _ = bench.call("start-reading")
+    count = bench.heard.count
+    bench.adapter.cameToFront()
+    check("scans made behind, and reading started since: none is said", Array(bench.heard[count...]), [])
+}
+
+do {
+    // the page gone while the app was behind: what was owed is owed to no one
+    let scanner = RecordedScanner()
+    scanner.paired = ["A"]
+    scanner.state = "connected"
+    scanner.deviceID = "A"
+    let adapter = IDScannerAdapter(name: "id-reader", scanner: scanner)
+    var first: [String] = [], second: [String] = []
+    let stop = adapter.listen("events", data: nil, each: { first.append(fields($0)) }, failed: { _ in })
+    adapter.wentBehind()
+    scanner.say(.result(ScannerResult(kind: .read, holder: nil, issueCodes: [])))
+    stop()
+    _ = adapter.listen("events", data: nil, each: { second.append(fields($0)) }, failed: { _ in })
+    adapter.cameToFront()
+    check("a stream that ended while the app was behind took what it was owed with it",
+          Array(first.dropFirst()) + Array(second.dropFirst()), [])
 }
 
 // MARK: the stand-in's scenes

@@ -55,7 +55,11 @@ import UIKit
 //                                      reading is stopped: that one came,
 //                                      and nothing of it (the scanner made
 //                                      its own sound; a gene says why
-//                                      nothing shows, or draws nothing)
+//                                      nothing shows, or draws nothing).
+//                                      One for each scan while the app is
+//                                      in front; while it is behind none,
+//                                      and one when it comes to the front
+//                                      if any was made, however many
 //   { kind: "state", state, paired, reason }
 //                                      a real connection change, at once:
 //                                      idle, scanning, connecting, connected,
@@ -141,6 +145,11 @@ final class IDScannerAdapter: NativeLibrary {
     private var watching: (() -> Void)?
     private var scanListener: (() -> Void)?
     private var foreground: NSObjectProtocol?
+    private var background: NSObjectProtocol?
+    /// The app is behind, and a scan nobody read came while it was: one
+    /// unread is owed to the streams when it comes to the front.
+    private var behind = false
+    private var unreadOwed = false
     /// The last state the streams heard, its reason and whether a scanner
     /// was paired, so a held-back reading never shows as a change.
     private var heardState: String?
@@ -206,6 +215,7 @@ final class IDScannerAdapter: NativeLibrary {
         pairing?.limit?()
         nextTry?()
         if let foreground { NotificationCenter.default.removeObserver(foreground) }
+        if let background { NotificationCenter.default.removeObserver(background) }
     }
 
     /// The scanner a customer build links (IDScannerBinding's), under the
@@ -229,6 +239,11 @@ final class IDScannerAdapter: NativeLibrary {
                 foreground = NotificationCenter.default.addObserver(
                     forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
                 ) { [weak self] _ in self?.cameToFront() }
+                background = NotificationCenter.default.addObserver(
+                    forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+                ) { [weak self] _ in self?.wentBehind() }
+                // an app iOS opened behind (for its scanner) never left the screen
+                behind = UIApplication.shared.applicationState == .background
                 #endif
             } catch {
                 configured = .failure(NativeError(message: "configure: \(error)"))
@@ -245,6 +260,20 @@ final class IDScannerAdapter: NativeLibrary {
     func cameToFront() {
         scanner.becameActive()
         tellState()
+        behind = false
+        // scans nobody read while the app was behind: said once, now that
+        // the page is shown, if still nothing reads
+        if unreadOwed, scanListener == nil { sendUnread() }
+        unreadOwed = false
+    }
+
+    /// The app has left the screen. The scanner goes on working there (the
+    /// phone keeps its link), and a page that is not shown is handed no
+    /// word of a scan nobody reads: what a web view does with what it is
+    /// handed while hidden is its own, and a scanner used behind the app
+    /// would otherwise fill the page with them on its return.
+    func wentBehind() {
+        behind = true
     }
 
     // MARK: calls
@@ -526,8 +555,11 @@ final class IDScannerAdapter: NativeLibrary {
             send(event)
         case .result, .duplicate:
             // a scan nobody reads: the stream is told that one came, with
-            // no field of it, so the page can say why nothing shows
-            if scanListener == nil { sinks.values.forEach { $0(["kind": "unread"]) } }
+            // no field of it, so the page can say why nothing shows. With
+            // no stream open it is told to none and kept for none; with
+            // the app behind, one is owed for however many came
+            guard scanListener == nil, !sinks.isEmpty else { return }
+            if behind { unreadOwed = true } else { sendUnread() }
         default:
             break
         }
@@ -580,9 +612,14 @@ final class IDScannerAdapter: NativeLibrary {
                 self.heardReason = nil
                 self.heardPaired = nil
                 self.stopReading()
+                self.unreadOwed = false // owed to the streams that have gone
                 self.endOwed(ReconnectEnded.pageGone) // and nothing asks for a scanner in keyboard mode
             }
         }
+    }
+
+    private func sendUnread() {
+        sinks.values.forEach { $0(["kind": "unread"]) }
     }
 
     private func stopReading() {
