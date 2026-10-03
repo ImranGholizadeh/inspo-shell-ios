@@ -23,6 +23,8 @@ final class ShellState: ObservableObject {
 // the shell talks to the page through window.inspo, which the page sets
 // (linkOpened, nativeAnswered, nativeFailed, deviceAnswered, deviceFailed),
 // and what arrives before the page is ready waits in window.inspoWaiting.
+// It says what it does in window.inspoShell.acts (ShellActs.swift), so a
+// page newer or older than this shell knows what to ask of it.
 final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     static let shared = ShellBridge()
     private(set) weak var webView: WKWebView?
@@ -58,6 +60,10 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         config.mediaTypesRequiringUserActionForPlayback = []
         config.applicationNameForUserAgent = "InspoShell/1"
         config.userContentController.add(self, name: "inspo")
+        // what this shell does, said before the page's own script runs: the
+        // page never hands it a request it would not answer (ShellActs.swift)
+        config.userContentController.addUserScript(WKUserScript(
+            source: ShellActs.script(ShellActs.phone), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: config)
         view.uiDelegate = self
         view.navigationDelegate = self

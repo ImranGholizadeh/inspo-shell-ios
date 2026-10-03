@@ -10,6 +10,7 @@ import WebKit
 // "haptic"} played on the trackpad, {type: "native"} for a native library,
 // NativeLibrary.swift, shared with the iOS shell), and the shell answers
 // through window.inspo, or window.inspoWaiting before the page is ready.
+// It says what it does in window.inspoShell.acts (ShellActs.swift).
 final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     static let shared = DesktopBridge()
     /// The height of the title bar the page runs under
@@ -28,6 +29,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         config.userContentController.addUserScript(WKUserScript(
             source: "window.inspoSafeArea = { top: \(Int(Self.titleBarHeight.rounded())) };",
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // what this shell does, said before the page's own script runs: a
+        // share and a clipboard are not among them, so the page does them
+        // the web view's own way, or says at once that it cannot
+        // (ShellActs.swift)
+        config.userContentController.addUserScript(WKUserScript(
+            source: ShellActs.script(ShellActs.desktop), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = self
         view.setValue(false, forKey: "drawsBackground")
