@@ -28,7 +28,7 @@ import UIKit
 //                          is not connected (below)
 //           feedback       data "accept" | "deny" | "error" (or {pattern: ...})
 //           start-reading  results and duplicates start reaching the stream
-//           stop-reading   they stop
+//           stop-reading   they stop: a scan is then told as unread
 //           reconnect      connects the paired scanner again, and answers
 //                          when it is connected, however long that takes
 //                          (a gene gives the call its time limit); with
@@ -51,6 +51,11 @@ import UIKit
 //     issueCode }                                                  (the first issue, if any)
 //   { kind: "duplicate", result }      a result the scanner suppressed as a
 //                                      repeat, with only its kind (read, ...)
+//   { kind: "unread" }                 a scan, or its repeat, made while
+//                                      reading is stopped: that one came,
+//                                      and nothing of it (the scanner made
+//                                      its own sound; a gene says why
+//                                      nothing shows, or draws nothing)
 //   { kind: "state", state, paired, reason }
 //                                      a real connection change, at once:
 //                                      idle, scanning, connecting, connected,
@@ -519,6 +524,10 @@ final class IDScannerAdapter: NativeLibrary {
             send(event)
         case .battery, .warning:
             send(event)
+        case .result, .duplicate:
+            // a scan nobody reads: the stream is told that one came, with
+            // no field of it, so the page can say why nothing shows
+            if scanListener == nil { sinks.values.forEach { $0(["kind": "unread"]) } }
         default:
             break
         }

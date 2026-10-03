@@ -459,6 +459,45 @@ do {
           ["1", "1", "battery=90 kind=state paired=1 state=connected"])
 }
 
+// MARK: a scan nobody reads
+
+do {
+    let (scanner, bench) = bench(paired: ["A"], state: "connected")
+    let one = ScannerResult(kind: .read, holder: ScannerHolder(fullName: "Test Person One", dateOfBirth: "1990-01-01",
+                                                               expirationDate: "2030-01-01", isOver21: true, isExpired: false), issueCodes: [])
+    var count = bench.heard.count
+    scanner.say(.result(one))
+    check("a scan made while nothing reads is told to the stream, with no field of it", Array(bench.heard[count...]), ["kind=unread"])
+    count = bench.heard.count
+    scanner.say(.duplicate(one))
+    check("and so is its repeat", Array(bench.heard[count...]), ["kind=unread"])
+    _ = bench.call("start-reading")
+    count = bench.heard.count
+    scanner.say(.result(one))
+    scanner.say(.duplicate(one))
+    check("while it reads: the result and its repeat, and nothing more", Array(bench.heard[count...]),
+          ["dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true kind=read",
+           "kind=duplicate result=read"])
+    _ = bench.call("stop-reading")
+    count = bench.heard.count
+    scanner.say(.result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"])))
+    check("reading stopped: a scan is unread again, whatever its kind", Array(bench.heard[count...]), ["kind=unread"])
+    count = bench.heard.count
+    scanner.say(.battery(60))
+    scanner.say(.connection("reading"))
+    scanner.say(.connection("connected"))
+    check("what is no scan is as ever", Array(bench.heard[count...]), ["battery=60 kind=battery"])
+}
+
+do {
+    let reader = StandInReader()
+    let bench = Bench(reader, written: fields)
+    reader.wait = bench.clock.wait
+    let count = bench.heard.count
+    reader.press()
+    check("the stand-in's press while nothing reads", Array(bench.heard[count...]), ["kind=unread"])
+}
+
 // MARK: the stand-in's scenes
 
 func standIn() -> (StandInReader, Bench) {
