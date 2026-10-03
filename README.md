@@ -59,7 +59,7 @@ stand-in takes for itself (on a simulator: `xcrun simctl openurl booted
 | `bluetooth-off` | Bluetooth is switched off: a connected scanner drops, and nothing can be connected |
 | `bluetooth-refused` | Bluetooth is not allowed for this app |
 | `back` | Bluetooth is on and allowed again and the scanner is near: a scanner that is waited for connects in under a second |
-| `keyboard-mode` | the scanner is set to type as a keyboard: the warning, the link drops, and a connection meets the warning again until `back` |
+| `keyboard-mode` | the scanner is set to type as a keyboard: the warning, the link drops, and a connection asked of it is refused with the warning again until `back` (the adapter holds that: the page hears the warning once) |
 | `low-battery` | the battery at 8 percent, and the warning |
 | `unpaired` | no scanner is paired with this phone (a first pairing pairs the stand-in again); the stream's state event says `paired` 0 at once, whatever the state was |
 | `paired` | the stand-in as it starts: paired and connected |
@@ -134,11 +134,11 @@ the same shape.
 | `state` (call) | at once, never waiting for a connection: `{kind: "state", state, battery, paired, reason}`. `battery` is the percent, once the scanner has said it; `paired` is 1 when a scanner is paired with this phone and 0 when none is (a number); `reason` is why a scanner is not connected (below) |
 | `feedback` (call, data `accept`, `deny` or `error`, or `{pattern}`) | accept plays the package's success feedback; deny and error its error feedback |
 | `start-reading`, `stop-reading` (calls) | subscribe and unsubscribe the package's result listener |
-| `reconnect` (call, data none or `{wait: 0}`) | connects the paired scanner again. With no data it answers `{}` when the scanner is connected, however long that takes, as it always has (the gene gives the call its time limit). With `{wait: 0}` it answers at once with the state it moved to, in the `state` call's shape, and the connection comes on the stream. No scanner paired: the call fails, either way |
+| `reconnect` (call, data none or `{wait: 0}`) | connects the paired scanner again. With no data it answers `{}` when the scanner is connected, however long that takes, as it always has (the gene gives the call its time limit). With `{wait: 0}` it answers at once with the state it moved to, in the `state` call's shape, and the connection comes on the stream. Asked of a scanner in keyboard mode it is kept, either way, and the adapter asks for the scanner itself until it is set back (below). No scanner paired: the call fails, either way |
 | `forget` (call) | forgets the paired scanner the package's status names |
 | `start-pairing` (call, data `{venue, door, doorName}`, each optional) | starts pairing a scanner this phone has never used, and answers at once with `{kind: "pairing", step}`: `looking`, or the step of the pairing that already runs, which goes on. The data is where the scanner is paired; the package keeps it with the pairing, on the phone, beside iOS's id of the phone for the app's maker, which the shell adds |
 | `stop-pairing` (call) | stops the pairing that runs |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode` or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode`, said once for each change of mode and to a stream that opens while it stands, or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
 
 The adapter configures the package once, on first use: its age and expiry
 checks on, its duplicate window as delivered, reporting off the phone never
@@ -190,6 +190,19 @@ scanner and whether it is there (the first customer's request Q011), so:
   with its `reason` when Bluetooth is off or not allowed, and then the
   scanner is asked for when Bluetooth is back). A gene built before this
   sends no data and gets the answer it always got.
+- **A scanner in keyboard mode cannot be made into a loop.** The package
+  refuses a connection to it and says the warning again each time. The
+  adapter passes the warning on when the mode is first known, and not again
+  until the scanner has been connecting or connected since, so a gene that
+  answers the warning with a reconnect is not answered with another warning.
+  A `reconnect` asked meanwhile is kept, not passed on as it comes: with
+  `{wait: 0}` it answers at once with the state as it is (`disconnected`,
+  `reason` `unknown`), with no data it answers when the scanner connects;
+  and the adapter asks the package itself, at once and then every two
+  seconds, since only asking says that the scanner was set back. Fifty
+  reconnects in a second ask the package once. Set back, the scanner
+  connects at the adapter's next try, with no tap. The tries end when it is
+  connected or forgotten, and when the page's stream closes.
 
 Bluetooth's own state is the binding's to read (`BluetoothWatch` in
 `Bindings/VendorIDScanner.swift`: a central of its own that connects nothing),

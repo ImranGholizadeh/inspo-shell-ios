@@ -335,6 +335,130 @@ do {
           last(bench.heard, 2), ["kind=state paired=1 reason=unknown state=idle", "kind=state paired=0 state=idle"])
 }
 
+// MARK: a scanner that types as a keyboard, and reconnects asked of it
+
+/// A recorded scanner put in keyboard mode as the package tells it: the
+/// warning, and the link drops.
+func typing() -> (RecordedScanner, Bench) {
+    let (scanner, bench) = bench(paired: ["A"], state: "connected")
+    scanner.say(.warning(.keyboardMode))
+    scanner.say(.connection("disconnected", away: .unknown))
+    return (scanner, bench)
+}
+
+/// The package's answer to a connection asked of a scanner in keyboard
+/// mode: the warning again, and the connection fails.
+func refuseAsKeyboard(_ scanner: RecordedScanner) {
+    scanner.say(.warning(.keyboardMode))
+    scanner.answerConnects(Refused())
+}
+
+func warnings(_ bench: Bench) -> Int { bench.heard.filter { $0 == "kind=warning warning=keyboard-mode" }.count }
+
+do {
+    let (scanner, bench) = typing()
+    var answers: Set<String> = []
+    for _ in 0..<50 {
+        answers.insert(bench.call("reconnect", ["wait": 0]))
+        refuseAsKeyboard(scanner) // the package says the warning again at each connection it is asked for
+        bench.clock.pass(0.02)
+    }
+    check("fifty reconnects asked in a second of a scanner in keyboard mode: the package is asked once, and each is answered at once with the state",
+          scanner.asked + answers.sorted(), ["connect A", "kind=state paired=1 reason=unknown state=disconnected"])
+    check("and the stream heard the keyboard-mode warning once, at the change of mode, not once for each", [String(warnings(bench))], ["1"])
+    bench.clock.pass(1)
+    refuseAsKeyboard(scanner)
+    check("the adapter asks again by itself two seconds after the one before, since nothing else says the mode has changed",
+          scanner.asked + [String(warnings(bench))], ["connect A", "connect A", "1"])
+    bench.clock.pass(2)
+    scanner.say(.connection("connecting")) // set back: the package no longer refuses, and waits for it
+    check("set back, the next of its own tries is not refused: the scanner is waited for, and the stream says so",
+          [String(scanner.asked.count)] + last(bench.heard, 1), ["3", "kind=state paired=1 reason=unknown state=reconnecting"])
+    scanner.say(.connection("connected"))
+    scanner.answerConnects()
+    bench.clock.pass(100)
+    check("and connects with no tap; then nothing more is asked", [String(scanner.asked.count)] + last(bench.heard, 1),
+          ["3", "kind=state paired=1 state=connected"])
+    scanner.say(.warning(.keyboardMode))
+    scanner.say(.connection("disconnected", away: .unknown))
+    check("set to keyboard mode again, the warning is said again: once for each change of mode", [String(warnings(bench))], ["2"])
+}
+
+do {
+    let (scanner, bench) = typing()
+    let waited = bench.call("reconnect")
+    refuseAsKeyboard(scanner)
+    check("a reconnect that waits, asked of a scanner in keyboard mode, waits for it: no answer, no error, and no new warning",
+          [waited] + bench.answered + [String(warnings(bench))], ["no answer", "1"])
+    bench.clock.pass(2)
+    scanner.say(.connection("connected"))
+    scanner.answerConnects()
+    check("and is answered when the scanner is connected, as a reconnect that waits always is", bench.answered, ["{}"])
+}
+
+do {
+    let (scanner, bench) = bench(paired: ["A"])
+    _ = bench.call("reconnect", ["wait": 0]) // the app opened with the scanner already in keyboard mode: the adapter does not know yet
+    refuseAsKeyboard(scanner)
+    check("a reconnect that finds the keyboard mode out: the warning once, the state as it is, and the scanner no longer said to be waited for",
+          [String(warnings(bench))] + last(bench.heard, 1) + scanner.asked,
+          ["1", "kind=state paired=1 reason=unknown state=idle", "connect A"])
+    bench.clock.pass(2)
+    check("and the adapter goes on asking by itself, two seconds apart", scanner.asked, ["connect A", "connect A"])
+}
+
+do {
+    let (scanner, bench) = typing()
+    _ = bench.call("reconnect", ["wait": 0])
+    refuseAsKeyboard(scanner)
+    var began: [String] = []
+    let stop = bench.adapter.listen("events", data: nil, each: { began.append(fields($0)) }, failed: { _ in })
+    stop()
+    check("a stream that opens while the scanner is in keyboard mode hears the state, then the warning that stands", began,
+          ["kind=state paired=1 reason=unknown state=disconnected", "kind=warning warning=keyboard-mode"])
+}
+
+do {
+    let (scanner, bench) = typing()
+    let waited = bench.call("reconnect")
+    refuseAsKeyboard(scanner)
+    let forgot = bench.call("forget")
+    bench.clock.pass(100)
+    check("forget ends it: the reconnect that waited fails, and the scanner is asked for no more",
+          [waited, forgot] + [String(bench.answered.count)] + scanner.asked, ["no answer", "{}", "2", "connect A", "forget A"])
+}
+
+do {
+    let (scanner, bench) = typing()
+    _ = bench.call("reconnect", ["wait": 0])
+    refuseAsKeyboard(scanner)
+    scanner.say(.bluetooth(.off))
+    bench.clock.pass(10)
+    check("with Bluetooth off nothing is asked of a scanner in keyboard mode", scanner.asked, ["connect A"])
+    scanner.say(.bluetooth(.on))
+    bench.clock.pass(2)
+    check("and it is asked for again once Bluetooth is back", [String(scanner.asked.count >= 2)], ["true"])
+}
+
+do {
+    let reader = StandInReader()
+    let bench = Bench(reader, written: fields)
+    reader.wait = bench.clock.wait
+    _ = bench.call("start-reading")
+    reader.play("keyboard-mode")
+    for _ in 0..<50 {
+        _ = bench.call("reconnect", ["wait": 0])
+        bench.clock.pass(0.02)
+    }
+    check("the stand-in in keyboard mode, fifty reconnects in a second: one warning", [String(warnings(bench))], ["1"])
+    reader.play("back")
+    bench.clock.pass(3)
+    let connections = bench.heard.filter { $0 == "kind=state paired=1 state=connected" }.count
+    check("back: one connection, with no reconnect asked after it, and no warning more",
+          [String(connections - 1), String(warnings(bench)), bench.call("state")],
+          ["1", "1", "battery=90 kind=state paired=1 state=connected"])
+}
+
 // MARK: the stand-in's scenes
 
 func standIn() -> (StandInReader, Bench) {
@@ -435,12 +559,14 @@ do {
     check("keyboard mode: the warning, and the link drops", last(bench.heard, 2),
           ["kind=warning warning=keyboard-mode", "kind=state paired=1 reason=unknown state=disconnected"])
     let answer = bench.call("reconnect", ["wait": 0])
-    check("a reconnect meets the keyboard again: the warning again, and still disconnected", [answer] + last(bench.heard, 1),
-          ["battery=90 kind=state paired=1 reason=unknown state=disconnected", "kind=warning warning=keyboard-mode"])
+    check("a reconnect meets the keyboard again: still disconnected, and the warning is not said again", [answer] + last(bench.heard, 2),
+          ["battery=90 kind=state paired=1 reason=unknown state=disconnected", "kind=warning warning=keyboard-mode",
+           "kind=state paired=1 reason=unknown state=disconnected"])
     reader.play("back")
-    _ = bench.call("reconnect", ["wait": 0])
-    bench.clock.pass(0.8)
-    check("set back, a reconnect connects it", last(bench.heard, 2),
+    bench.clock.pass(1.9)
+    check("set back, it is not asked for before the adapter's next try", last(bench.heard, 1), ["kind=state paired=1 reason=unknown state=disconnected"])
+    bench.clock.pass(0.1 + 0.8)
+    check("and the reconnect that was kept connects it then, with no other asked", last(bench.heard, 2),
           ["kind=state paired=1 reason=unknown state=reconnecting", "kind=state paired=1 state=connected"])
     reader.play("low-battery")
     check("low battery: the percent and the warning", [bench.call("state")] + last(bench.heard, 2),

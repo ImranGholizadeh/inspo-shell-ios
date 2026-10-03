@@ -34,7 +34,10 @@ import UIKit
 //                          (a gene gives the call its time limit); with
 //                          data {wait: 0} it answers at once with the
 //                          state it moved to, in the state call's shape,
-//                          and the connection comes on the stream
+//                          and the connection comes on the stream; of a
+//                          scanner in keyboard mode it is kept, and the
+//                          adapter asks for the scanner by itself until
+//                          it is set back (below)
 //           forget         forgets the paired scanner
 //           start-pairing  starts pairing a scanner this phone has never
 //                          used; data {venue, door, doorName}: where, kept
@@ -64,8 +67,11 @@ import UIKit
 //   { kind: "battery", battery }       the percent
 //   { kind: "warning", warning }       keyboard-mode: the scanner is set to
 //                                      type as a keyboard and cannot be
-//                                      connected until it is set back;
-//                                      low-battery
+//                                      connected until it is set back, said
+//                                      once for each change of mode (and to
+//                                      a stream that opens while it stands),
+//                                      never once for each connection that
+//                                      meets it; low-battery
 //   { kind: "pairing", step, reason }  a pairing's step: looking, connecting,
 //                                      confirm (the person scans any barcode
 //                                      with the scanner in their hand),
@@ -89,6 +95,21 @@ import UIKit
 // that can tell it; none does yet), else unknown. When Bluetooth comes
 // back on, the adapter asks for the paired scanner again, since Bluetooth
 // going off ends the phone's wait without a word.
+//
+// A scanner in keyboard mode. The package cannot connect it, and says so
+// each time it is asked to: the warning again, and the connection fails.
+// A gene that answers the warning with a reconnect would then be answered
+// with the warning, for ever and as fast as the two can go. So the adapter
+// holds it: the warning reaches the streams when the mode is first known,
+// and not again until the scanner has been connecting or connected since;
+// and a reconnect asked of a scanner in keyboard mode is not passed to the
+// package as it comes. It is kept (one with {wait: 0} is answered at once
+// with the state, one that waits is answered when the scanner connects),
+// and the adapter asks the package itself, at once and then every two
+// seconds, since nothing but asking says that the scanner was set back.
+// However many reconnects a gene asks, the package is asked at that pace.
+// The state told meanwhile is the package's own (disconnected), not
+// reconnecting: the phone is not waiting for the scanner, the adapter is.
 //
 // A first pairing (owner, 2026-10-02: "Nearest scanner, confirm by scan")
 // shows the person no list: the adapter listens for a short window from the
@@ -131,6 +152,18 @@ final class IDScannerAdapter: NativeLibrary {
     /// Bluetooth as the binding last said it, so its coming back on is
     /// told from its first word.
     private var bluetoothWas = ScannerBluetooth.unknown
+    /// The scanner is in keyboard mode: the package said so, and has not
+    /// been connecting or connected since. And how many times it has said
+    /// so, by which a connection that failed is known to have met it.
+    private var keyboard = false
+    private var keyboardWords = 0
+    /// A reconnect is owed to a scanner in keyboard mode: the adapter asks
+    /// for it by itself at its own pace. The reconnects that wait for the
+    /// connection, the run it belongs to, and the wait for the next try.
+    private var owed = false
+    private var owedDones: [(Error?) -> Void] = []
+    private var owedRun = 0
+    private var nextTry: (() -> Void)?
     /// The pairing that runs, if one does.
     private var pairing: Pairing?
     private var pairings = 0
@@ -143,6 +176,9 @@ final class IDScannerAdapter: NativeLibrary {
     static let listeningWindow: TimeInterval = 3
     static let connectingLimit: TimeInterval = 10
     static let confirmLimit: TimeInterval = 30
+    /// How long the adapter waits between two of its own tries for a
+    /// scanner in keyboard mode, in seconds.
+    static let keyboardRetry: TimeInterval = 2
 
     /// Runs work after some seconds, unless the returned cancel is called
     /// first. A check passes the time itself.
@@ -163,6 +199,7 @@ final class IDScannerAdapter: NativeLibrary {
         scanListener?()
         pairing?.listener?()
         pairing?.limit?()
+        nextTry?()
         if let foreground { NotificationCenter.default.removeObserver(foreground) }
     }
 
@@ -246,9 +283,22 @@ final class IDScannerAdapter: NativeLibrary {
                 lost = nil
                 asks = 0
                 asksRun += 1
+                keyboard = false
+                endOwed(ReconnectEnded.forgotten)
                 scanner.forget(id) { [weak self] error in
                     done(error)
                     self?.tellState()
+                }
+                return
+            }
+            if keyboard {
+                // the package would refuse it and say the warning again:
+                // it is kept, and the adapter asks at its own pace
+                if Self.waits(data) {
+                    owe(done)
+                } else {
+                    owe(nil)
+                    answer(.success(stateAnswer()))
                 }
                 return
             }
@@ -356,13 +406,81 @@ final class IDScannerAdapter: NativeLibrary {
     /// is connected or cannot be; until then the scanner is waited for.
     private func ask(_ id: String, done: ((Error?) -> Void)? = nil) {
         let run = asksRun
+        let words = keyboardWords
         asks += 1
         scanner.connect(id) { [weak self] error in
             if let self, self.asksRun == run { self.asks -= 1 }
-            done?(error)
+            if let self, error != nil, self.asksRun == run, self.keyboard, self.keyboardWords != words {
+                // it met the keyboard mode: the reconnect is kept, not failed,
+                // and was itself the first try
+                self.owe(done, tried: true)
+            } else {
+                done?(error)
+            }
             self?.tellState()
         }
         tellState()
+    }
+
+    // MARK: a scanner in keyboard mode
+
+    /// Keeps a reconnect asked of a scanner in keyboard mode: done, if it
+    /// waits for the connection. The first kept starts the adapter's own
+    /// tries, at once, or after the wait when the package was just asked
+    /// (tried); the ones after it change nothing of their pace.
+    private func owe(_ done: ((Error?) -> Void)?, tried: Bool = false) {
+        if let done { owedDones.append(done) }
+        guard !owed else { return }
+        owed = true
+        owedRun += 1
+        let run = owedRun
+        if tried {
+            nextTry = wait(Self.keyboardRetry) { [weak self] in self?.tryOwed(run) }
+        } else {
+            tryOwed(run)
+        }
+    }
+
+    /// One of the adapter's own tries: the package is asked for the paired
+    /// scanner. Refused with the warning again, it is in keyboard mode
+    /// still, and is tried again after the wait; connected, or failed
+    /// otherwise, the reconnects kept are answered and the tries end.
+    private func tryOwed(_ run: Int) {
+        guard owed, run == owedRun else { return }
+        nextTry = nil
+        let known = scanner.pairedDeviceIDs
+        guard let id = known.first(where: { $0 == scanner.connection.deviceID }) ?? known.first else {
+            return endOwed(ReconnectEnded.noScanner)
+        }
+        let again = { [weak self] in
+            guard let self, self.owed, run == self.owedRun else { return }
+            self.nextTry = self.wait(Self.keyboardRetry) { [weak self] in self?.tryOwed(run) }
+        }
+        // nothing can be asked while Bluetooth is off or not allowed
+        let bluetooth = scanner.bluetooth
+        guard bluetooth != .off, bluetooth != .notAllowed else { return again() }
+        let words = keyboardWords
+        scanner.connect(id) { [weak self] error in
+            guard let self, self.owed, run == self.owedRun else { return }
+            if error != nil, self.keyboardWords != words {
+                again()
+            } else {
+                self.endOwed(error)
+            }
+            self.tellState()
+        }
+    }
+
+    /// Ends the adapter's own tries, and answers the reconnects kept.
+    private func endOwed(_ error: Error?) {
+        guard owed else { return }
+        owed = false
+        owedRun += 1
+        nextTry?()
+        nextTry = nil
+        let dones = owedDones
+        owedDones = []
+        dones.forEach { $0(error) }
     }
 
     /// Bluetooth is back on: the paired scanner is asked for again, since
@@ -371,7 +489,7 @@ final class IDScannerAdapter: NativeLibrary {
         guard pairing == nil, Self.shown(scanner.connection.state) != "connected" else { return }
         let known = scanner.pairedDeviceIDs
         guard let id = known.first(where: { $0 == scanner.connection.deviceID }) ?? known.first else { return }
-        ask(id)
+        if keyboard { owe(nil) } else { ask(id) }
     }
 
     /// What the package says of its connection, Bluetooth, battery and
@@ -384,12 +502,21 @@ final class IDScannerAdapter: NativeLibrary {
             } else if let away {
                 lost = away
             }
+            // connecting or connected, the scanner is no keyboard any more
+            if ["connected", "connecting"].contains(Self.shown(state)) { keyboard = false }
+            if Self.shown(state) == "connected" { endOwed(nil) }
             tellState()
         case .bluetooth(let now):
             let was = bluetoothWas
             bluetoothWas = now
             if now == .on, was == .off || was == .notAllowed { askAgain() }
             tellState()
+        case .warning(.keyboardMode):
+            // said at the change of mode, not at each connection that meets it
+            keyboardWords += 1
+            guard !keyboard else { return }
+            keyboard = true
+            send(event)
         case .battery, .warning:
             send(event)
         default:
@@ -434,6 +561,7 @@ final class IDScannerAdapter: NativeLibrary {
         heardPaired = paired
         each(Self.flat(state: now, paired: paired, reason: heardReason)) // where the stream begins
         if let pairing { each(Self.flat(pairing: pairing.step)) } // and a pairing that runs
+        if keyboard, let warning = Self.flat(.warning(.keyboardMode)) { each(warning) } // and a keyboard mode that stands
         return { [weak self] in
             guard let self else { return }
             self.sinks.removeValue(forKey: key)
@@ -443,6 +571,7 @@ final class IDScannerAdapter: NativeLibrary {
                 self.heardReason = nil
                 self.heardPaired = nil
                 self.stopReading()
+                self.endOwed(ReconnectEnded.pageGone) // and nothing asks for a scanner in keyboard mode
             }
         }
     }
@@ -656,4 +785,10 @@ final class IDScannerAdapter: NativeLibrary {
         if let code = result.issueCodes.first { value["issueCode"] = code }
         return value
     }
+}
+
+/// Why a reconnect kept for a scanner in keyboard mode ended with no
+/// connection.
+enum ReconnectEnded: Error {
+    case forgotten, noScanner, pageGone
 }
