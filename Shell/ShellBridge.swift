@@ -111,6 +111,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// A link that opened the app, or reached it while open: the page's
     /// link-opened trigger.
     func linkOpened(_ url: URL) {
+        // a test build's stand-in plays its scenes by a link, which is its own
+        if StandInReader.plays(url) { return }
         call("linkOpened", url.absoluteString)
     }
 

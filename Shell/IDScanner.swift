@@ -19,11 +19,22 @@ import UIKit
 //
 // The adapter's names, the gene's endpoint urls native://<library>/<name>:
 //
-//   calls   state          the connection state and the battery, in one answer
+//   calls   state          at once, never waiting for a connection:
+//                          { kind: "state", state, battery, paired, reason }
+//                          the connection's state; the battery's percent,
+//                          once the scanner has said it; paired, 1 when a
+//                          scanner is paired with this phone and 0 when
+//                          none is (a number); and reason, why a scanner
+//                          is not connected (below)
 //           feedback       data "accept" | "deny" | "error" (or {pattern: ...})
 //           start-reading  results and duplicates start reaching the stream
 //           stop-reading   they stop
-//           reconnect      connects the paired scanner again
+//           reconnect      connects the paired scanner again, and answers
+//                          when it is connected, however long that takes
+//                          (a gene gives the call its time limit); with
+//                          data {wait: 0} it answers at once with the
+//                          state it moved to, in the state call's shape,
+//                          and the connection comes on the stream
 //           forget         forgets the paired scanner
 //           start-pairing  starts pairing a scanner this phone has never
 //                          used; data {venue, door, doorName}: where, kept
@@ -37,13 +48,20 @@ import UIKit
 //     issueCode }                                                  (the first issue, if any)
 //   { kind: "duplicate", result }      a result the scanner suppressed as a
 //                                      repeat, with only its kind (read, ...)
-//   { kind: "state", state }           a real connection change: idle,
-//                                      scanning, connecting, connected,
+//   { kind: "state", state, reason }   a real connection change, at once:
+//                                      idle, scanning, connecting, connected,
 //                                      reconnecting, disconnected; the
 //                                      package's reading during each scan is
 //                                      held back (owner, 2026-10-01: "Hold
-//                                      'reading' back")
+//                                      'reading' back"); and again when only
+//                                      the reason has changed (Bluetooth
+//                                      switched off or back on while the
+//                                      scanner was away)
 //   { kind: "battery", battery }       the percent
+//   { kind: "warning", warning }       keyboard-mode: the scanner is set to
+//                                      type as a keyboard and cannot be
+//                                      connected until it is set back;
+//                                      low-battery
 //   { kind: "pairing", step, reason }  a pairing's step: looking, connecting,
 //                                      confirm (the person scans any barcode
 //                                      with the scanner in their hand),
@@ -53,6 +71,20 @@ import UIKit
 //                                      bluetooth-not-allowed; or, refused
 //                                      at once because a scanner is
 //                                      connected, already-connected
+//
+// A paired scanner that is away (Q011). The phone waits for a paired
+// scanner with no time limit and connects it when it is heard again; the
+// package's state while it waits is connecting, the same as while a first
+// pairing connects its pick. So outside a pairing the adapter tells a paired
+// scanner's connecting as reconnecting: the scanner is away, and comes back
+// by itself. connecting is then only a first pairing's connection being
+// made. The reason comes with a state of disconnected or reconnecting, and
+// with idle when a scanner is paired: bluetooth-off, bluetooth-not-allowed
+// (Bluetooth as the binding reads it now), out-of-range (the package said
+// the link dropped, and has not connected since), switched-off (a package
+// that can tell it; none does yet), else unknown. When Bluetooth comes
+// back on, the adapter asks for the paired scanner again, since Bluetooth
+// going off ends the phone's wait without a word.
 //
 // A first pairing (owner, 2026-10-02: "Nearest scanner, confirm by scan")
 // shows the person no list: the adapter listens for a short window from the
@@ -73,14 +105,27 @@ final class IDScannerAdapter: NativeLibrary {
     private var configured: Result<Void, NativeError>?
     /// The page's streams, by key; every event reaches each.
     private var sinks: [UUID: ([String: Any]) -> Void] = [:]
-    /// The package's listeners: state and battery while a stream is open,
-    /// results while reading.
-    private var stateListener: (() -> Void)?
+    /// The package's listeners: its connection, Bluetooth, battery and
+    /// warnings from first use on (so the adapter knows why a scanner is
+    /// away whether or not a stream is open), and results while reading.
+    private var watching: (() -> Void)?
     private var scanListener: (() -> Void)?
     private var foreground: NSObjectProtocol?
-    /// The last state the streams heard, so a held-back reading never
-    /// shows as a change.
+    /// The last state the streams heard, and its reason, so a held-back
+    /// reading never shows as a change.
     private var heardState: String?
+    private var heardReason: String?
+    /// Why the scanner was last lost, as the package said it: kept while
+    /// the package waits for it, until it is connected again or forgotten.
+    private var lost: ScannerAway?
+    /// The connections the adapter asked of the paired scanner that have
+    /// been answered neither way, and the run they belong to (a forget
+    /// starts a new run: an answer from before it counts for nothing).
+    private var asks = 0
+    private var asksRun = 0
+    /// Bluetooth as the binding last said it, so its coming back on is
+    /// told from its first word.
+    private var bluetoothWas = ScannerBluetooth.unknown
     /// The pairing that runs, if one does.
     private var pairing: Pairing?
     private var pairings = 0
@@ -109,7 +154,7 @@ final class IDScannerAdapter: NativeLibrary {
     }
 
     deinit {
-        stateListener?()
+        watching?()
         scanListener?()
         pairing?.listener?()
         pairing?.limit?()
@@ -132,6 +177,7 @@ final class IDScannerAdapter: NativeLibrary {
             do {
                 try scanner.configure(ScannerPolicy(checksAge: true, checksExpiry: true))
                 configured = .success(())
+                watching = scanner.listen { [weak self] in self?.heard($0) }
                 #if os(iOS)
                 foreground = NotificationCenter.default.addObserver(
                     forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -157,9 +203,7 @@ final class IDScannerAdapter: NativeLibrary {
         }
         switch call {
         case "state":
-            var value: [String: Any] = ["kind": "state", "state": Self.shown(scanner.connection.state)]
-            if let battery = scanner.batteryPercent { value["battery"] = battery }
-            answer(.success(value))
+            answer(.success(stateAnswer()))
         case "feedback":
             guard let kind = Self.feedback(data) else {
                 answer(.failure(NativeError(message: "feedback: no pattern \(Self.pattern(data) ?? "")")))
@@ -184,11 +228,30 @@ final class IDScannerAdapter: NativeLibrary {
                 answer(.failure(NativeError(message: "\(call): no paired scanner")))
                 return
             }
-            if call == "reconnect" {
-                scanner.connect(id, done: done)
-            } else {
-                scanner.forget(id, done: done)
+            if call == "forget" {
+                lost = nil
+                asks = 0
+                asksRun += 1
+                scanner.forget(id) { [weak self] error in
+                    done(error)
+                    self?.tellState()
+                }
+                return
             }
+            if Self.waits(data) {
+                // as ever: the answer is the connection, however long the
+                // scanner is away
+                ask(id, done: done)
+                return
+            }
+            // at once: with Bluetooth off or not allowed nothing can be
+            // asked (the scanner is asked for when Bluetooth is back); a
+            // scanner that is connected needs nothing
+            let bluetooth = scanner.bluetooth
+            if shownNow() != "connected", bluetooth != .off, bluetooth != .notAllowed {
+                ask(id)
+            }
+            answer(.success(stateAnswer()))
         case "start-pairing":
             if let pairing {
                 // one pairing at a time: the one that runs goes on
@@ -227,6 +290,114 @@ final class IDScannerAdapter: NativeLibrary {
         (data as? String) ?? ((data as? [String: Any])?["pattern"] as? String)
     }
 
+    /// Whether a reconnect's answer waits for the connection. It does, as
+    /// it always has, unless the gene's data says {wait: 0}.
+    static func waits(_ data: Any?) -> Bool {
+        guard let wait = (data as? [String: Any])?["wait"] as? NSNumber else { return true }
+        return wait.boolValue
+    }
+
+    // MARK: the connection's state, and why a scanner is not connected
+
+    private var paired: Bool { !scanner.pairedDeviceIDs.isEmpty }
+
+    /// The connection's state as the gene hears it now. Outside a pairing,
+    /// a paired scanner being connected is a scanner waited for: reconnecting.
+    private func shownNow() -> String {
+        let state = Self.shown(scanner.connection.state)
+        guard state != "connected", pairing == nil, paired else { return state }
+        return state == "connecting" || asks > 0 ? "reconnecting" : state
+    }
+
+    /// Why the scanner is not connected, for a state that says it is not:
+    /// Bluetooth as it is now first, then what the package said when the
+    /// scanner was lost.
+    private func reason(_ state: String) -> String? {
+        guard state == "disconnected" || state == "reconnecting" || (state == "idle" && paired) else { return nil }
+        let bluetooth = scanner.bluetooth
+        switch bluetooth {
+        case .off: return "bluetooth-off"
+        case .notAllowed: return "bluetooth-not-allowed"
+        case .on, .unknown: break
+        }
+        switch lost ?? scanner.connection.away {
+        case .outOfRange: return "out-of-range"
+        case .switchedOff: return "switched-off"
+        // Bluetooth has come back on since: the scanner is still not there
+        case .bluetoothOff: return bluetooth == .on ? "unknown" : "bluetooth-off"
+        case .bluetoothNotAllowed: return bluetooth == .on ? "unknown" : "bluetooth-not-allowed"
+        case .unknown, nil: return "unknown"
+        }
+    }
+
+    /// The state call's answer, and a reconnect's that does not wait.
+    private func stateAnswer() -> [String: Any] {
+        let state = shownNow()
+        var value = Self.flat(state: state, reason: reason(state))
+        value["paired"] = paired ? 1 : 0
+        if let battery = scanner.batteryPercent { value["battery"] = battery }
+        return value
+    }
+
+    /// Asks the package for the paired scanner. The package answers when it
+    /// is connected or cannot be; until then the scanner is waited for.
+    private func ask(_ id: String, done: ((Error?) -> Void)? = nil) {
+        let run = asksRun
+        asks += 1
+        scanner.connect(id) { [weak self] error in
+            if let self, self.asksRun == run { self.asks -= 1 }
+            done?(error)
+            self?.tellState()
+        }
+        tellState()
+    }
+
+    /// Bluetooth is back on: the paired scanner is asked for again, since
+    /// Bluetooth going off ended the phone's wait for it.
+    private func askAgain() {
+        guard pairing == nil, Self.shown(scanner.connection.state) != "connected" else { return }
+        let known = scanner.pairedDeviceIDs
+        guard let id = known.first(where: { $0 == scanner.connection.deviceID }) ?? known.first else { return }
+        ask(id)
+    }
+
+    /// What the package says of its connection, Bluetooth, battery and
+    /// warnings, from first use on.
+    private func heard(_ event: ScannerLibraryEvent) {
+        switch event {
+        case .connection(let state, let away):
+            if Self.shown(state) == "connected" {
+                lost = nil
+            } else if let away {
+                lost = away
+            }
+            tellState()
+        case .bluetooth(let now):
+            let was = bluetoothWas
+            bluetoothWas = now
+            if now == .on, was == .off || was == .notAllowed { askAgain() }
+            tellState()
+        case .battery, .warning:
+            send(event)
+        default:
+            break
+        }
+    }
+
+    /// Tells the streams the connection's state when it, or why the scanner
+    /// is not connected, is not what they last heard: only a real change
+    /// (reading is connected, and a scan's connected after it is no change).
+    private func tellState() {
+        guard !sinks.isEmpty else { return }
+        let state = shownNow()
+        let why = reason(state)
+        guard state != heardState || why != heardReason else { return }
+        heardState = state
+        heardReason = why
+        let value = Self.flat(state: state, reason: why)
+        sinks.values.forEach { $0(value) }
+    }
+
     // MARK: the stream
 
     func listen(_ events: String, data: Any?, each: @escaping ([String: Any]) -> Void,
@@ -241,26 +412,18 @@ final class IDScannerAdapter: NativeLibrary {
         }
         let key = UUID()
         sinks[key] = each
-        if stateListener == nil {
-            stateListener = scanner.listen { [weak self] event in
-                switch event {
-                case .connection, .battery: self?.send(event)
-                default: break
-                }
-            }
-        }
-        let now = Self.shown(scanner.connection.state)
+        let now = shownNow()
         heardState = now
-        each(["kind": "state", "state": now]) // where the stream begins
+        heardReason = reason(now)
+        each(Self.flat(state: now, reason: heardReason)) // where the stream begins
         if let pairing { each(Self.flat(pairing: pairing.step)) } // and a pairing that runs
         return { [weak self] in
             guard let self else { return }
             self.sinks.removeValue(forKey: key)
             if self.sinks.isEmpty {
                 // the page has gone: nothing is listening, nothing is read
-                self.stateListener?()
-                self.stateListener = nil
                 self.heardState = nil
+                self.heardReason = nil
                 self.stopReading()
             }
         }
@@ -272,13 +435,6 @@ final class IDScannerAdapter: NativeLibrary {
     }
 
     private func send(_ event: ScannerLibraryEvent) {
-        if case .connection(let state) = event {
-            // only a real change: reading is connected, and a scan's
-            // connected after it is no change
-            let now = Self.shown(state)
-            guard now != heardState else { return }
-            heardState = now
-        }
         guard let value = Self.flat(event) else { return }
         sinks.values.forEach { $0(value) }
     }
@@ -442,14 +598,23 @@ final class IDScannerAdapter: NativeLibrary {
             return flat(result)
         case .duplicate(let result):
             return ["kind": "duplicate", "result": result.kind.rawValue]
-        case .connection(let state):
-            return ["kind": "state", "state": shown(state)]
         case .battery(let percent):
             return ["kind": "battery", "battery": percent]
+        case .warning(let warning):
+            return ["kind": "warning", "warning": warning == .keyboardMode ? "keyboard-mode" : "low-battery"]
+        case .connection, .bluetooth:
+            // told as the state, when it or its reason changes (tellState)
+            return nil
         case .found, .confirming, .unpassed:
             // a pairing's events reach the gene as its steps
             return nil
         }
+    }
+
+    static func flat(state: String, reason: String?) -> [String: Any] {
+        var value: [String: Any] = ["kind": "state", "state": state]
+        if let reason { value["reason"] = reason }
+        return value
     }
 
     static func flat(pairing step: String, reason: String? = nil) -> [String: Any] {

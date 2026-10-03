@@ -19,6 +19,14 @@
 // callbacks on the main thread. Every mapping decision is the adapter's:
 // in a first pairing the binding passes on each scanner the package hears
 // and the adapter picks which to connect.
+//
+// One thing the package does not say, the binding reads from iOS itself:
+// Bluetooth on this phone (BluetoothWatch, below). The package warns when
+// Bluetooth goes off or is refused and says nothing when it comes back, and
+// a connection it was waiting for when Bluetooth went off is not asked for
+// again; with Bluetooth's own word the adapter can tell why a paired scanner
+// is not connected, at any moment, and ask for it again when Bluetooth is
+// back.
 
 import CoreBluetooth
 import Foundation
@@ -35,6 +43,9 @@ final class VendorIDScanner: BluetoothIDScanner {
     /// Counts the pairings asked for and stopped, so one that was stopped
     /// while it waited for Bluetooth is not started after all.
     private var pairings = 0
+    /// Bluetooth on this phone, and who hears it change.
+    private var watch: BluetoothWatch?
+    private var listeners: [UUID: (ScannerLibraryEvent) -> Void] = [:]
 
     /// Age and expiry policy on (the package's minimum age as delivered),
     /// the duplicate window as delivered. Reporting off the phone is never
@@ -44,12 +55,23 @@ final class VendorIDScanner: BluetoothIDScanner {
         options.minimumAge = policy.checksAge ? (options.minimumAge ?? ScannerOptions().minimumAge) : nil
         options.rejectExpired = policy.checksExpiry
         try scanner.configure(options)
+        // Bluetooth is watched from the moment the package first uses it,
+        // so iOS asks the person once, for both. A package set to use no
+        // Bluetooth (its own simulation) is watched for none.
+        if options.usesCoreBluetooth, watch == nil {
+            watch = BluetoothWatch { [weak self] now in
+                self?.listeners.values.forEach { $0(.bluetooth(now)) }
+            }
+        }
     }
 
     var connection: ScannerConnection {
         let status = scanner.connectionStatus
-        return ScannerConnection(state: status.state.rawValue, deviceID: status.identity?.peripheralId.uuidString)
+        return ScannerConnection(state: status.state.rawValue, deviceID: status.identity?.peripheralId.uuidString,
+                                 away: status.reason.map(Self.away))
     }
+
+    var bluetooth: ScannerBluetooth { watch?.now ?? .unknown }
 
     var batteryPercent: Int? { scanner.battery?.percent }
 
@@ -59,9 +81,25 @@ final class VendorIDScanner: BluetoothIDScanner {
         run(done) { try await self.scanner.feedback(kind == .success ? .success : .error) }
     }
 
+    /// The package's connect: it answers when the scanner is connected, and
+    /// waits for a paired scanner that is away with no time limit. Like a
+    /// pairing (below), it is refused while the package's Bluetooth has not
+    /// yet said it is on, so a refusal is tried again for three seconds
+    /// unless Bluetooth is known to be off or not allowed.
     func connect(_ deviceID: String, done: @escaping (Error?) -> Void) {
         guard let id = UUID(uuidString: deviceID) else { return done(BindingError.notAScannerID) }
-        run(done) { try await self.scanner.connect(peripheralId: id) }
+        Task { @MainActor in
+            for attempt in 0... {
+                do {
+                    try await self.scanner.connect(peripheralId: id)
+                    return done(nil)
+                } catch ScannerError.bluetoothUnavailable where attempt < 6 && self.bluetooth != .off && self.bluetooth != .notAllowed {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                } catch {
+                    return done(error)
+                }
+            }
+        }
     }
 
     func forget(_ deviceID: String, done: @escaping (Error?) -> Void) {
@@ -125,19 +163,39 @@ final class VendorIDScanner: BluetoothIDScanner {
     }
 
     func listen(_ each: @escaping (ScannerLibraryEvent) -> Void) -> () -> Void {
+        let key = UUID()
+        listeners[key] = each
         let token = scanner.addListener { each(Self.event($0)) }
-        return { token.cancel() }
+        return { [weak self] in
+            token.cancel()
+            self?.listeners.removeValue(forKey: key)
+        }
     }
 
     static func event(_ event: ScannerEvent) -> ScannerLibraryEvent {
         switch event {
         case .scanReceived(let scan): return .result(result(scan))
         case .scanDebounced(let scan): return .duplicate(result(scan))
-        case .connectionStateChanged(let status): return .connection(status.state.rawValue)
+        case .connectionStateChanged(let status): return .connection(status.state.rawValue, away: status.reason.map(away))
         case .batteryChanged(let battery): return .battery(battery.percent)
+        case .warning(.hidBondDetected): return .warning(.keyboardMode)
+        case .warning(.lowBattery): return .warning(.lowBattery)
         case .deviceFound(let device): return .found(deviceID: device.peripheralId.uuidString, signal: device.rssi)
         case .pairingStep(.confirmByScan): return .confirming
         default: return .unpassed
+        }
+    }
+
+    /// Why the package says the scanner is not connected, in the surface's
+    /// terms. The package tells a dropped link and a connection that timed
+    /// out, never a scanner switched off from one out of range; a
+    /// disconnection the app asked for, and anything else, is not known.
+    static func away(_ reason: DisconnectReason) -> ScannerAway {
+        switch reason {
+        case .peripheralDropped, .timeout: return .outOfRange
+        case .bluetoothOff: return .bluetoothOff
+        case .unauthorized: return .bluetoothNotAllowed
+        default: return .unknown
         }
     }
 
@@ -165,4 +223,37 @@ final class VendorIDScanner: BluetoothIDScanner {
 
 enum BindingError: Error {
     case notAScannerID
+}
+
+/// Bluetooth on this phone, from iOS itself: a central of the binding's own
+/// that connects nothing and only hears Bluetooth's state. It shows no alert
+/// of its own when Bluetooth is off. Its word comes on the main thread.
+final class BluetoothWatch: NSObject, CBCentralManagerDelegate {
+    private var central: CBCentralManager?
+    private let changed: (ScannerBluetooth) -> Void
+    private(set) var now = ScannerBluetooth.unknown
+
+    init(changed: @escaping (ScannerBluetooth) -> Void) {
+        self.changed = changed
+        super.init()
+        central = CBCentralManager(delegate: self, queue: .main, options: [CBCentralManagerOptionShowPowerAlertKey: false])
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        let state = Self.reading(central.state)
+        guard state != now else { return }
+        now = state
+        changed(state)
+    }
+
+    /// Bluetooth's state in the surface's terms; a state iOS has not yet
+    /// settled (or a simulator's, which has no Bluetooth) is not known.
+    static func reading(_ state: CBManagerState) -> ScannerBluetooth {
+        switch state {
+        case .poweredOn: return .on
+        case .poweredOff: return .off
+        case .unauthorized: return .notAllowed
+        default: return .unknown
+        }
+    }
 }

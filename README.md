@@ -37,7 +37,21 @@ A test build may set `INSPO_NATIVE_STAND_IN` to a library's name (`id-reader`):
 `StandInReader` then stands in for the Bluetooth ID scanner, with made-up
 events played one per press of either volume button, so a gene's scan flow
 runs with no device. A first pairing plays too: the press that comes while it
-waits for the confirming scan is that scan.
+waits for the confirming scan is that scan. A scanner that is away plays by a
+link to the app, `<the app's url scheme>://stand-in/<scene>`, which the
+stand-in takes for itself (on a simulator: `xcrun simctl openurl booted
+<scheme>://stand-in/away`; on a phone, the link tapped in Notes or Safari):
+
+| Scene | What it plays |
+|---|---|
+| `away` | the paired scanner goes out of range: the link drops and the phone waits for it. As the link that opens the app, a phone opened with its scanner away: paired, idle, nothing asked yet |
+| `bluetooth-off` | Bluetooth is switched off: a connected scanner drops, and nothing can be connected |
+| `bluetooth-refused` | Bluetooth is not allowed for this app |
+| `back` | Bluetooth is on and allowed again and the scanner is near: a scanner that is waited for connects in under a second |
+| `keyboard-mode` | the scanner is set to type as a keyboard: the warning, the link drops, and a connection meets the warning again until `back` |
+| `low-battery` | the battery at 8 percent, and the warning |
+| `unpaired` | no scanner is paired with this phone (a first pairing pairs the stand-in again) |
+| `paired` | the stand-in as it starts: paired and connected |
 
 To upload a lane's build: `scripts/archive.sh <lane xcconfig>`, then
 `scripts/upload.sh` (the newest lane archive, or one named), which sends it
@@ -59,18 +73,64 @@ the same shape.
 
 | Endpoint (`native://<library>/<name>`) | What the adapter does |
 |---|---|
-| `state` (call) | `{kind: "state", state, battery}` from the package's connection status and battery |
+| `state` (call) | at once, never waiting for a connection: `{kind: "state", state, battery, paired, reason}`. `battery` is the percent, once the scanner has said it; `paired` is 1 when a scanner is paired with this phone and 0 when none is (a number); `reason` is why a scanner is not connected (below) |
 | `feedback` (call, data `accept`, `deny` or `error`, or `{pattern}`) | accept plays the package's success feedback; deny and error its error feedback |
 | `start-reading`, `stop-reading` (calls) | subscribe and unsubscribe the package's result listener |
-| `reconnect`, `forget` (calls) | connect again to, or forget, the paired scanner the package's status names |
+| `reconnect` (call, data none or `{wait: 0}`) | connects the paired scanner again. With no data it answers `{}` when the scanner is connected, however long that takes, as it always has (the gene gives the call its time limit). With `{wait: 0}` it answers at once with the state it moved to, in the `state` call's shape, and the connection comes on the stream. No scanner paired: the call fails, either way |
+| `forget` (call) | forgets the paired scanner the package's status names |
 | `start-pairing` (call, data `{venue, door, doorName}`, each optional) | starts pairing a scanner this phone has never used, and answers at once with `{kind: "pairing", step}`: `looking`, or the step of the pairing that already runs, which goes on. The data is where the scanner is paired; the package keeps it with the pairing, on the phone, beside iOS's id of the phone for the app's maker, which the shell adds |
 | `stop-pairing` (call) | stops the pairing that runs |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`, a real connection change: the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `state` (`state`, and `reason` when the scanner is not connected: a real connection change, at once; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode` or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
 
 The adapter configures the package once, on first use: its age and expiry
 checks on, its duplicate window as delivered, reporting off the phone never
 configured. Nothing but the fields above leaves the adapter, and the shell
 keeps only those the endpoint's `keep` names.
+
+### A paired scanner that is not connected: paired, the reason, at once
+
+A gene's scanner pill must say within a second whether this phone has a
+scanner and whether it is there (the first customer's request Q011), so:
+
+- **`paired`** comes with every `state` answer, from the package's own list of
+  paired scanners, read at the call.
+- **The state while a paired scanner is away is `reconnecting`.** The phone
+  waits for a paired scanner with no time limit and connects it when it is
+  heard again; the package's state while it waits is `connecting`, the same
+  as while a first pairing connects its pick. Outside a pairing the adapter
+  tells a paired scanner's `connecting` as `reconnecting`, so `connecting` is
+  only a first pairing's connection being made. A phone just opened, with a
+  scanner paired and nothing asked yet, is `idle` with `paired` 1.
+- **`reason`** comes with `disconnected` and `reconnecting`, and with `idle`
+  when a scanner is paired:
+
+  | `reason` | When |
+  |---|---|
+  | `bluetooth-off` | Bluetooth is switched off, as iOS says it now |
+  | `bluetooth-not-allowed` | Bluetooth is not allowed for this app, by the person or the phone's rules |
+  | `out-of-range` | the package said the link dropped or timed out, and the scanner has not connected since. A scanner switched off reads the same: the package cannot tell them apart |
+  | `switched-off` | kept for a package that can tell it; none does, so it is never sent today |
+  | `unknown` | anything else: nothing asked yet, a scanner asked for that has not answered, a scanner forgotten, a scanner in keyboard mode (the warning says so) |
+
+- **A `state` event comes at once** when the link drops, when Bluetooth goes
+  off or is refused, when it comes back, and when the scanner is connected
+  again; also when only the reason has changed (Bluetooth switched off while
+  the scanner was already away), so the same `state` may come twice with
+  another `reason`.
+- **Bluetooth coming back on** makes the adapter ask for the paired scanner
+  again: Bluetooth going off ends the phone's wait without a word, and the
+  scanner would otherwise never connect until someone tapped Reconnect.
+- **`reconnect` with `{wait: 0}`** answers at once (`reconnecting` for a
+  scanner now waited for, `connected` for one that is, the state as it is
+  with its `reason` when Bluetooth is off or not allowed, and then the
+  scanner is asked for when Bluetooth is back). A gene built before this
+  sends no data and gets the answer it always got.
+
+Bluetooth's own state is the binding's to read (`BluetoothWatch` in
+`Bindings/VendorIDScanner.swift`: a central of its own that connects nothing),
+since a scanner's package says when Bluetooth goes off and nothing when it
+comes back. `scripts/check-reader.sh` checks all of it on this Mac, with a
+scanner that only records what it was asked, and plays the stand-in's scenes.
 
 ### A first pairing: the nearest scanner, confirmed by a scan
 
@@ -108,7 +168,9 @@ The customer's lane, never this repository, holds:
 2. `<lane>/ios/IDScannerBinding/`, a Swift package named `IDScannerBinding`
    with one library product of that name, whose one source is
    `Bindings/VendorIDScanner.swift` from this repository with the vendor
-   module's import line added, and which depends on this repository's
+   module's import line added (copied again whenever that file changes
+   here: the binding and the surface are built together), and which depends
+   on this repository's
    `Packages/IDScannerSurface` (by path) and on the vendor's package (by
    path, where the customer keeps it):
 
