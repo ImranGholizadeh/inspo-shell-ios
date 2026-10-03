@@ -8,15 +8,20 @@
 #   (from this repository; none: Inspo's defaults). A lane whose app links a
 #   native library's package (the Bluetooth ID scanner, README) names its
 #   Xcode workspace, which holds this project and the package's binding.
+#   A lane's icon and splash: INSPO_BRAND_ASSETS in its xcconfig names the
+#   folder of its asset sets, laid over the shell's own in a temporary copy
+#   for this build only (brand-overlay.sh).
 set -eu
 conf=${1:-Config/Default.xcconfig}
-if [ -n "${2:-}" ]; then container="-workspace $2"; else container="-project Shell.xcodeproj"; fi
+workspace=${2:-}
+. "$(dirname "$0")/brand-overlay.sh"
 day=$(date +%Y-%m-%d)
-name=$(sed -n 's/^INSPO_APP_NAME *= *//p' "$conf" | tail -1)
+name=$(xcconfig_value INSPO_APP_NAME "$conf")
 out="$HOME/Library/Developer/Xcode/Archives/$day/${name:-Shell} $(date +%H.%M.%S).xcarchive"
 echo "+ archiving ${name:-Shell} with $conf"
-xcodebuild archive $container -scheme Shell -configuration Release \
+xcodebuild archive "$container_flag" "$container_path" -scheme Shell -configuration Release \
   -destination 'generic/platform=iOS' -xcconfig "$conf" -archivePath "$out" \
+  ${derived:+-derivedDataPath} ${derived:+"$derived"} \
   -allowProvisioningUpdates CURRENT_PROJECT_VERSION="$(date +%Y%m%d%H%M)" | \
   grep -E 'error|warning: |ARCHIVE (SUCCEEDED|FAILED)' || true
 test -d "$out" && echo "archive: $out" && echo "upload it from Xcode: Window > Organizer > Distribute App"

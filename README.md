@@ -39,6 +39,53 @@ events played one per press of either volume button, so a gene's scan flow
 runs with no device. A first pairing plays too: the press that comes while it
 waits for the confirming scan is that scan.
 
+### A customer's brand: its icon and its splash
+
+The shell's own icon is a placeholder and its splash is plain (the system's
+background, no mark). A customer's icon and splash stay in the customer's
+lane and are laid over the shell's at build time (owner, 2026-10-03:
+"Overlay at build time"):
+
+1. The lane keeps a folder of asset sets, as Xcode writes them:
+   `AppIcon.appiconset` (one 1024 by 1024 image, no transparency), and for
+   the splash `LaunchBackground.colorset` (its colour) and
+   `LaunchMark.imageset` (the mark drawn in its middle). The icon is needed;
+   a set left out stays the shell's.
+2. Its xcconfig names the folder: `INSPO_BRAND_ASSETS = <the folder>` (from
+   the root, or from the xcconfig's own place).
+3. A lane that keeps its own copy of `Shell/Info.plist` (the scanner build
+   below) carries the shell's `UILaunchScreen` in it, which names the two
+   splash sets:
+
+       <key>UILaunchScreen</key>
+       <dict>
+           <key>UIColorName</key>
+           <string>LaunchBackground</string>
+           <key>UIImageName</key>
+           <string>LaunchMark</string>
+       </dict>
+
+The key is read by the build scripts, not by Xcode: `scripts/archive.sh` and
+`scripts/simulator.sh` (through `scripts/brand-overlay.sh`) copy the shell to
+a temporary folder, lay the lane's sets over `Shell/Assets.xcassets` there,
+build from the copy, and remove it when the script ends, however it ends.
+The copy's project names this repository's `Packages/` where they are, so a
+lane's workspace and binding build as before. Nothing of the brand is ever
+written into this repository, and a build with plain `xcodebuild` or from
+Xcode carries the shell's placeholder. A folder with no `AppIcon.appiconset`,
+a set that could not be copied, or a workspace that does not hold
+`Shell.xcodeproj` stops the build with the reason. `scripts/check-brand.sh`
+checks all of it on this Mac, with a made-up lane and an xcodebuild that only
+records what it was asked to build.
+
+To try a lane's app on the simulator, its icon and splash included:
+
+    scripts/simulator.sh <lane xcconfig> [<lane workspace>]
+
+It builds a development build, unsigned, into `build/simulator` (or
+`INSPO_BUILD_DIR`), and prints the app's path and the two `xcrun simctl`
+commands that install and launch it on the booted simulator.
+
 To upload a lane's build: `scripts/archive.sh <lane xcconfig>`, then
 `scripts/upload.sh` (the newest lane archive, or one named), which sends it
 to App Store Connect with its team's signing, no Organizer needed. An archive
@@ -137,8 +184,10 @@ The customer's lane, never this repository, holds:
      added, and its xcconfig sets `INFOPLIST_FILE` to that copy.
 
 Then: `xcodebuild -workspace <lane>/ios/Customer.xcworkspace -scheme Shell
--xcconfig <lane>/deploy/ios.xcconfig ...`, as for any lane build, and
-`scripts/archive.sh <lane xcconfig> <lane workspace>` to archive it. A build
+-xcconfig <lane>/deploy/ios.xcconfig ...`, as for any lane build;
+`scripts/simulator.sh <lane xcconfig> <lane workspace>` to try it on the
+simulator and `scripts/archive.sh <lane xcconfig> <lane workspace>` to
+archive it, both with the lane's brand when its xcconfig names one. A build
 without the workspace (this repository alone, or a test build with the
 stand-in) links no scanner and declares no Bluetooth.
 
