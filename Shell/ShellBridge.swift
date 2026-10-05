@@ -124,13 +124,14 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
             #if DEBUG
             print("shell: the page asked for the \(type == "share" ? "share sheet" : "clipboard")") // never what it handed over
             #endif
-            let answered = { [weak self] in
+            // typed: a release build leaves each body one expression, which Swift would read as its optional result
+            let answered: () -> Void = { [weak self] in
                 #if DEBUG
                 print("shell: the \(type == "share" ? "share sheet closed" : "clipboard holds the text")")
                 #endif
                 self?.call("deviceAnswered", id)
             }
-            let failed = { [weak self] (reason: String) in
+            let failed: (String) -> Void = { [weak self] reason in
                 #if DEBUG
                 print("shell: the \(type) failed: \(reason)")
                 #endif
