@@ -40,7 +40,10 @@ import Foundation
 //                              one. A tap that opens an app that was closed
 //                              comes before any page has asked: it is kept,
 //                              the last one only, and said to the first
-//                              stream that opens
+//                              stream that opens. Said to a page that goes
+//                              within three seconds, it is kept once more
+//                              for the page that loads, and never a third
+//                              time
 //   { kind: "arrived", link }  a notification arrived while the app is on
 //                              the screen and a stream is open: the page is
 //                              told and draws what it will, and iOS shows
@@ -120,10 +123,12 @@ final class PushLibrary: NativeLibrary {
     private var sinks: [UUID: ([String: Any]) -> Void] = [:]
     /// A tap that came while no stream was open (the app was closed, or
     /// its page had not asked yet): said to the first stream that opens.
-    private var kept: [String: Any]?
+    /// again: it was said once already and is kept for the page after.
+    private var kept: (tap: [String: Any], again: Bool)?
     /// The last tap said to the streams, and when: a page that goes within
-    /// a moment of it may not have taken it (pageGone).
-    private var said: (tap: [String: Any], at: TimeInterval)?
+    /// a moment of it may not have taken it (pageGone). again: this was
+    /// its second saying, and it is not kept a second time.
+    private var said: (tap: [String: Any], at: TimeInterval, again: Bool)?
     /// The token calls that wait for Apple.
     private var waiting: [UUID: (Result<[String: Any], NativeError>) -> Void] = [:]
 
@@ -213,10 +218,10 @@ final class PushLibrary: NativeLibrary {
         let key = UUID()
         sinks[key] = each
         // a tap nobody has heard: this stream's, as it opens
-        if let tap = kept {
+        if let waiting = kept {
             kept = nil
-            said = (tap, now())
-            each(tap)
+            said = (waiting.tap, now(), waiting.again)
+            each(waiting.tap)
         }
         return { [weak self] in self?.sinks.removeValue(forKey: key) }
     }
@@ -226,10 +231,10 @@ final class PushLibrary: NativeLibrary {
     func tapped(_ payload: [AnyHashable: Any]) {
         let tap = Self.event("tap", payload)
         guard !sinks.isEmpty else {
-            kept = tap
+            kept = (tap, false)
             return
         }
-        said = (tap, now())
+        said = (tap, now(), false)
         sinks.values.forEach { $0(tap) }
     }
 
@@ -245,12 +250,14 @@ final class PushLibrary: NativeLibrary {
 
     /// The page has gone (it loads afresh, or iOS ended its content). A
     /// tap said a moment before may have been said to a page that was
-    /// already going: it is kept again, for the page that loads. Called
-    /// before the page's streams are stopped.
+    /// already going: it is kept again, for the page that loads, once. A
+    /// tap that was kept again and said a second time is not kept a third:
+    /// a page that goes each time it hears a tap would else hear that one
+    /// tap for ever. Called before the page's streams are stopped.
     func pageGone() {
         guard let last = said else { return }
         said = nil
-        if now() - last.at <= Self.heardAfter { kept = last.tap }
+        if !last.again, now() - last.at <= Self.heardAfter { kept = (last.tap, true) }
     }
 
     /// An event of a notification: its kind and, when its payload has one

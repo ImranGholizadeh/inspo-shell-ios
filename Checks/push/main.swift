@@ -275,6 +275,46 @@ do {
 }
 
 do {
+    // one tap, and fifty pages that each go a second after they hear it
+    func pages(_ bench: Bench, _ first: (heard: () -> [String], stop: () -> Void)) -> [Int] {
+        var page = first, heard: [Int] = []
+        for _ in 0..<50 {
+            heard.append(page.heard().count)
+            bench.clock.pass(1)
+            bench.library.pageGone()
+            page.stop()
+            page = bench.open()
+        }
+        return heard
+    }
+    let warm = Bench()
+    let open = warm.open()
+    warm.library.tapped(payload)
+    let said = pages(warm, open)
+    check("a tap said to a page that goes is kept for the next page once and not again: of fifty pages that each go as they hear it, the first two hear it and no other",
+          [String(said.reduce(0, +)), String(said.prefix(2).reduce(0, +))], ["2", "2"])
+    let cold = Bench()
+    cold.library.tapped(payload) // it opened an app that was closed
+    let after = pages(cold, cold.open())
+    check("and so for the tap that opened a closed app: the first page and the one after it, no other",
+          [String(after.reduce(0, +)), String(after.prefix(2).reduce(0, +))], ["2", "2"])
+    let fresh = Bench()
+    let stream = fresh.open()
+    fresh.library.tapped(payload)
+    fresh.clock.pass(1)
+    fresh.library.pageGone()
+    stream.stop()
+    let next = fresh.open()
+    fresh.library.tapped(["link": "made-up-app://second"])
+    fresh.clock.pass(1)
+    fresh.library.pageGone()
+    next.stop()
+    check("a second tap is a tap of its own: kept again once for the page after, though the tap before it had been",
+          next.heard() + fresh.open().heard(),
+          ["kind=tap link=made-up-app://open?from=notification", "kind=tap link=made-up-app://second", "kind=tap link=made-up-app://second"])
+}
+
+do {
     let bench = Bench()
     let old = bench.open()
     bench.library.tapped(payload)

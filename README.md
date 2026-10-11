@@ -355,8 +355,10 @@ engine, which the deployment signs.
   asked: it is kept, in memory, the last one only, and said to the first
   stream that opens. A tap said to a page that goes within three seconds
   of it (iOS ended its content while the app was behind, and the page loads
-  afresh) is kept again and said to the page that loads; a stream that
-  only closes because its screen was left is no page going.
+  afresh) is kept again and said to the page that loads, once: a tap is
+  said to two pages at most, so a page that goes each time it hears one
+  does not hear it for ever. A stream that only closes because its screen
+  was left is no page going.
 - **A notification that arrives with the app on the screen** is told to
   every open stream as `arrived`, and iOS then shows nothing over the page:
   the gene draws what it will. With no stream open nobody would tell the
