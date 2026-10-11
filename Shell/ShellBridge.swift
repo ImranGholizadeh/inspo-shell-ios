@@ -29,8 +29,12 @@ final class ShellState: ObservableObject {
 final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     static let shared = ShellBridge()
     private(set) weak var webView: WKWebView?
-    private var pending: [String] = [] // calls made before the first page finished loading
+    // what waits to be told to a page, and for which page (OwnPage.swift):
+    // calls made before a page finished loading
+    private var waiting = PageWaiting()
     private var loaded = false
+    // only the build's own page is answered (OwnPage.swift)
+    private lazy var door = PageDoor(own: PageOrigin(startURL))
     let state = ShellState()
     // a page that did not load is loaded again (LoadAgain.swift)
     private lazy var again = LoadAgain(load: { [weak self] in self?.loadPage() })
@@ -113,7 +117,17 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     // MARK: the page asks
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        guard let body = door.take(message.body, from: Self.origin(of: message.frameInfo), mainFrame: message.frameInfo.isMainFrame),
+              let type = body["type"] as? String else {
+            #if DEBUG
+            if !door.isOwn(Self.origin(of: message.frameInfo)) || !message.frameInfo.isMainFrame {
+                print("shell: a page that is not the build's own asked the shell; it is answered nothing") // never what it asked
+            }
+            #endif
+            return
+        }
+        // an answer is the page's that asked: told to no page that takes its place
+        let page = waiting.page
         switch type {
         case "haptic":
             playHaptic(body["mode"] as? String ?? "")
@@ -133,13 +147,13 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
                 #if DEBUG
                 print("shell: the \(type == "share" ? "share sheet closed" : "clipboard holds the text")")
                 #endif
-                self?.call("deviceAnswered", id)
+                self?.call("deviceAnswered", for: page, id)
             }
             let failed: (String) -> Void = { [weak self] reason in
                 #if DEBUG
                 print("shell: the \(type) failed: \(reason)")
                 #endif
-                self?.call("deviceFailed", id, reason)
+                self?.call("deviceFailed", for: page, id, reason)
             }
             if type == "share" {
                 HandOver.shared.share(body, answered: answered, failed: failed)
@@ -156,12 +170,18 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
                     // a development build says which fields the page was handed, never the value of one
                     print("shell: \(endpoint) handed the page: \(ShellBridge.names(of: value))")
                     #endif
-                    self?.call("nativeAnswered", id, value)
+                    self?.call("nativeAnswered", for: page, id, value)
                 },
-                failed: { [weak self] id, error in self?.call("nativeFailed", id, error) })
+                failed: { [weak self] id, error in self?.call("nativeFailed", for: page, id, error) })
         default:
             break
         }
+    }
+
+    /// A frame's origin, as the web view says it.
+    static func origin(of frame: WKFrameInfo) -> PageOrigin {
+        let origin = frame.securityOrigin
+        return PageOrigin(scheme: origin.protocol, host: origin.host, port: origin.port)
     }
 
     /// The names of an answer's fields, in order, for a development build's
@@ -209,14 +229,19 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     }
 
     /// Calls one of the page's hooks with JSON-shaped values; before the
-    /// page is ready the call waits, in order.
-    private func call(_ hook: String, _ values: Any...) {
+    /// page is ready the call waits, in order. An answer names the page
+    /// that asked (page) and is told to that page alone: when another has
+    /// taken its place it is nobody's. Nothing is told to a page that is
+    /// not the build's own: what no page asked for (a link that opened the
+    /// app) waits for one that is (OwnPage.swift).
+    private func call(_ hook: String, for page: Int? = nil, _ values: Any...) {
+        guard waiting.isFor(page) else { return }
         guard JSONSerialization.isValidJSONObject(values),
               let data = try? JSONSerialization.data(withJSONObject: values),
               let args = String(data: data, encoding: .utf8) else { return }
         let js = "(function(h,a){var i=window.inspo;if(i&&i[h]){i[h].apply(null,a)}else{(window.inspoWaiting=window.inspoWaiting||[]).push([h].concat(a))}})(\"\(hook)\",\(args))"
-        guard loaded, let webView else {
-            pending.append(js)
+        guard loaded, let webView, door.isOwn(PageOrigin(webView.url)) else {
+            waiting.wait(js, for: page)
             return
         }
         webView.evaluateJavaScript(js)
@@ -228,6 +253,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// again (owner, 2026-09-29: "Recover where it broke").
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
+        waiting.pageChanged() // what waited for the page that ended is nobody's
         state.pageLoaded = false // the splash, not an empty view, until it has loaded again
         PhonePush.shared.library.pageGone() // a tap it may not have taken is kept for the page that loads
         NativeLibraries.shared.stopAll() // the page that asked is gone
@@ -269,13 +295,20 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         HandOver.shared.pageGone()
     }
 
+    /// Another page has taken the place of the one the web view held: what
+    /// the shell had to tell the page before is nobody's now.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        waiting.pageChanged()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
         again.loaded()
         state.pageLoaded = true
-        let waiting = pending
-        pending = []
-        waiting.forEach { webView.evaluateJavaScript($0) }
+        // a page that is not the build's own is told nothing: what waits, waits on
+        if door.isOwn(PageOrigin(webView.url)) {
+            waiting.take().forEach { webView.evaluateJavaScript($0) }
+        }
     }
 }
 

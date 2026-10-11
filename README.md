@@ -24,6 +24,23 @@ phone has. Mobile is a mine of its own, separate from the web mine (owner,
 Calls made before the page is ready wait in `window.inspoWaiting`; the page's
 `app.js` takes them in order.
 
+**The shell answers the build's own page and no other** (`Shell/OwnPage.swift`).
+A web view goes where a link takes it, and the bridge is in every page it
+holds, so a link out of a gene's site would put another site's page in the
+app with the bridge in it; and what a page is handed is what its own
+request's `keep` names, which protects a read only while the page is the
+gene's. So a request is taken only from the main frame of a page whose
+origin is the origin of the build's page (`INSPO_URL`: its scheme, host and
+port). A page of any other origin, and a frame inside any page, is answered
+nothing: no call, no stream, no haptic, light, share or clipboard, and no
+word that it was refused. What the shell tells a page (an answer, a stream's
+event, a link that opened the app) is told only while the page the web view
+holds is the build's own, and an answer only to the page that asked: when
+another page takes its place, what waited for the page before is nobody's.
+The shell does not keep such a page out of the web view (a sign-in that
+passes through another site and comes back is one); it answers it nothing.
+`scripts/check-door.sh` holds it on this Mac.
+
 A page that does not load (the app opened with no signal, or brought back by
 iOS with none) is loaded again by itself: after a wait that doubles from one
 second to fifteen, and at once when iOS says the network is back or the app
