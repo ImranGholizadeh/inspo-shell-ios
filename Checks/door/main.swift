@@ -140,6 +140,10 @@ do {
           bridge.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.contains("evaluateJavaScript(") }.sorted(),
           ["if firstLoadAsked { webView.evaluateJavaScript(Self.said(edges) + CoveredEdges.readAgain) }",
            "waiting.take().forEach { webView.evaluateJavaScript($0) }", "webView.evaluateJavaScript(js)"])
+    check("the bridge counts each page that takes another's place: when a page's first bytes are in, and when iOS ended a page's content",
+          [String(bridge.components(separatedBy: "waiting.pageChanged()").count - 1),
+           String(bridge.contains("func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {\n        waiting.pageChanged()\n    }")),
+           String(bridge.contains("loaded = false\n        waiting.pageChanged() // what waited for the page that ended is nobody's"))], ["2", "true", "true"])
 }
 
 print("door: \(passed) passed, \(failed) failed")
