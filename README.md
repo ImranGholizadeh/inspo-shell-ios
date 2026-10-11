@@ -355,15 +355,27 @@ engine, which the deployment signs.
 
 A build that is to have a token is signed with the push entitlement: its
 lane's xcconfig sets `CODE_SIGN_ENTITLEMENTS = <this repository>/Config/Push.entitlements`
-and `INSPO_PUSH_ENVIRONMENT` (`production` for TestFlight and the App Store,
-which is the default; `development` for a build run from Xcode on a phone,
-and for a simulator). The file asks two things of Apple: `aps-environment`
+and nothing else. The file asks two things of Apple: `aps-environment`
 (the Push Notifications capability) and
 `com.apple.developer.usernotifications.time-sensitive` (so a notification
 that says it is time-sensitive is shown as one). With automatic signing the
 first archive turns both on for the app's id. A build that does not name the
 file is signed as before, and its token call fails. Nothing else is set: no
 key of a push service, no background mode.
+
+The push environment the file asks is `INSPO_PUSH_ENVIRONMENT`, and it is
+`development` for every build signed on a Mac (`Config/Default.xcconfig`):
+a simulator's, one run from Xcode, and the archive. `scripts/archive.sh`
+signs with the team's development profile, whose push environment is
+`development`; a file that asked `production` would not match it, and Xcode
+would stop the archive ("Provisioning profile ... doesn't match the
+entitlements file's value for the aps-environment entitlement"). The upload
+(`scripts/upload.sh`) signs the archive again for distribution and writes
+`production` by itself, so a build from TestFlight or the App Store is a
+production build with nothing set, and its token call says `production`
+(read from the build's own profile, never from this setting). A lane leaves
+the setting alone. This is by read of the two scripts and of what Xcode's
+signing does: only an archive made with a team's signing proves it.
 
 On a simulator (iOS 16 or later, on a Mac with Apple's own chip) the three
 play with no phone: the question is iOS's own, Apple hands the simulator a

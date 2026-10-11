@@ -19,6 +19,13 @@ INSPO_ID_SCANNER =
 // asks Apple's push environment below and time-sensitive notifications.
 // Not named here: a build that does not name it is signed as before, and its
 // token call fails (Apple registers no app without the entitlement).
-// production for a build that goes to TestFlight or the App Store,
-// development for one run from Xcode on a phone or built for a simulator.
-INSPO_PUSH_ENVIRONMENT = production
+// development for every build signed on a Mac: one built for a simulator,
+// one run from Xcode on a phone, and the archive too. An archive is signed
+// with the team's development profile, whose push environment is
+// development, and an entitlements file that asks production does not match
+// it: Xcode stops the archive ("Provisioning profile ... doesn't match the
+// entitlements file's value for the aps-environment entitlement"). The
+// upload signs the archive again for distribution and writes production by
+// itself (scripts/upload.sh), so a build from TestFlight or the App Store is
+// production with nothing set here. A lane leaves this as it is.
+INSPO_PUSH_ENVIRONMENT = development

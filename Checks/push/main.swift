@@ -386,6 +386,21 @@ do {
           ["false", "false", "IDScannerBinding", "IDScannerSurface"])
 }
 
+// MARK: the push environment a build signed on a Mac asks
+
+do {
+    // a build signed here (a simulator's, one run from Xcode, an archive) is
+    // signed with the team's development profile, whose push environment
+    // is development: an entitlements file that asks production does not
+    // match it. The upload's export signs again and writes production.
+    let config = (try? String(contentsOfFile: "Config/Default.xcconfig", encoding: .utf8)) ?? ""
+    let said = config.split(separator: "\n").filter { $0.hasPrefix("INSPO_PUSH_ENVIRONMENT") }.map { $0.replacingOccurrences(of: " ", with: "") }
+    check("the push environment a build asks, unless its lane says another, is development", said, ["INSPO_PUSH_ENVIRONMENT=development"])
+    let file = (try? String(contentsOfFile: "Config/Push.entitlements", encoding: .utf8)) ?? ""
+    check("and the entitlements file asks the one the build says, never one of its own",
+          [String(file.contains("<key>aps-environment</key>\n\t<string>$(INSPO_PUSH_ENVIRONMENT)</string>"))], ["true"])
+}
+
 func last(_ list: [String]) -> [String] { Array(list.suffix(1)) }
 
 print("push: \(passed) passed, \(failed) failed")
