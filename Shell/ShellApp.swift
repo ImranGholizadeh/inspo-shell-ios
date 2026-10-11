@@ -9,9 +9,14 @@ import SwiftUI
 // Go engine runs the graph and the page draws it, as on the web. The shell
 // adds only what a phone has and a page does not: haptics and the long
 // vibration, the camera, the light, the share sheet and the clipboard, the
-// links that open the app, and native libraries (a vendor's reader).
+// links that open the app, native libraries (a vendor's reader), and push:
+// the person's leave, the phone's token and a notification's tap
+// (Push.swift).
 @main
 struct ShellApp: App {
+    // Apple's registration and a notification's tap come to an app
+    // delegate (PhonePush.swift)
+    @UIApplicationDelegateAdaptor(ShellAppDelegate.self) private var appDelegate
     @ObservedObject private var state = ShellBridge.shared.state
     var body: some Scene {
         WindowGroup {

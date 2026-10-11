@@ -19,7 +19,8 @@ final class ShellState: ObservableObject {
 // {type: "torch", mode}: the phone's light, Torch.swift,
 // {type: "share", id, ...} and {type: "clipboard", id, text}: the share
 // sheet and the clipboard, HandOver.swift, and
-// {type: "native", ...}: a native library's call or stream, NativeLibrary.swift);
+// {type: "native", ...}: a native library's call or stream, NativeLibrary.swift,
+// the shell's own push library among them, Push.swift);
 // the shell talks to the page through window.inspo, which the page sets
 // (linkOpened, nativeAnswered, nativeFailed, deviceAnswered, deviceFailed),
 // and what arrives before the page is ready waits in window.inspoWaiting.
@@ -51,6 +52,9 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         if let standIn = StandInReader.fromBuild() {
             NativeLibraries.shared.register(standIn)
         }
+        // push: the person's leave, the phone's token and a notification's
+        // tap, each when a record's call asks (Push.swift)
+        NativeLibraries.shared.register(PhonePush.shared.library)
         let config = WKWebViewConfiguration()
         // the app's own persistent store: cookies, localStorage and
         // IndexedDB (where Firebase Auth keeps who signed in) outlive the
@@ -225,6 +229,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
         state.pageLoaded = false // the splash, not an empty view, until it has loaded again
+        PhonePush.shared.library.pageGone() // a tap it may not have taken is kept for the page that loads
         NativeLibraries.shared.stopAll() // the page that asked is gone
         Torch.shared.putOut()
         HandOver.shared.pageGone()
@@ -258,6 +263,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// a light it lit goes out, and a share sheet it opened is the
     /// person's to finish, answered to no one.
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        PhonePush.shared.library.pageGone()
         NativeLibraries.shared.stopAll()
         Torch.shared.putOut()
         HandOver.shared.pageGone()

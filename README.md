@@ -18,6 +18,7 @@ phone has. Mobile is a mine of its own, separate from the web mine (owner,
 | the light (the device neuron's `torch`) | `{type: "torch", mode: "on"}` or `{type: "torch", mode: "off"}`, switched on the phone's own light (`Shell/Torch.swift`); never answered. A device with no light switches nothing. A light the shell lit goes out when its page goes (a reload, a page that ended) and when the app leaves the screen. `scripts/check-torch.sh` checks it on this Mac, with no phone |
 | the camera (the device neuron's `camera`) | grants the web view's camera to the gene's own site only; iOS asks the person once |
 | `link-opened` | a link to the app's URL scheme calls `window.inspo.linkOpened(url)` |
+| push: the person's leave, the phone's push token, a notification's tap (`native://push/permission`, `native://push/token`, `native://push/events`) | a native library of the shell's own (`Shell/Push.swift`, below): each done when a record's call asks, never at launch or by itself |
 | a native library's call or event stream (a db neuron of type exotic on a `native://<library>/<name>` endpoint) | `{type: "native", id, url, data, keep, listen}` or `{type: "native", id, stop: true}`; the library's adapter (a `NativeLibrary`, registered with `NativeLibraries.shared`) answers, and the shell keeps only the fields `keep` names before calling `window.inspo.nativeAnswered(id, value)` or `nativeFailed(id, error)` |
 
 Calls made before the page is ready wait in `window.inspoWaiting`; the page's
@@ -314,6 +315,62 @@ simulator and `scripts/archive.sh <lane xcconfig> <lane workspace>` to
 archive it, both with the lane's brand when its xcconfig names one. A build
 without the workspace (this repository alone, or a test build with the
 stand-in) links no scanner and declares no Bluetooth.
+
+## Push
+
+`Shell/Push.swift` is a native library of the shell's own, named `push`: the
+three things of a push that only the phone can do. A gene reaches it as any
+native library, by endpoint documents, and the shell does each only when a
+record's call asks: it asks the person nothing, registers with nobody and
+hands no token over at launch or by itself. No package of a push service is
+in the shell or in a build of it, and no service's address or name: what a
+service needs beyond these answers (its own token for this phone, a topic
+the phone joins or leaves) is a call the gene's records make through the
+engine, which the deployment signs.
+
+| Endpoint | What the shell does, and answers |
+|---|---|
+| `native://push/permission` (call) | asks the person whether this app may notify them, and answers `{permission}`: `allowed` or `refused`. iOS shows its question the first time only; after that the answer it was given comes back with no question. With data `{ask: 0}` nothing is asked: it answers at once what the person has said so far, `not-asked` when they have never been asked. A person who takes longer than the engine's limit for a call (30 s) to answer the question has answered it all the same: the call took its error hop, and a call after it reads what they said |
+| `native://push/token` (call) | registers this phone with Apple and answers `{token, environment, app}`: the phone's push token as Apple gave it, in small hex; Apple's push environment the build is signed for, `development` or `production` (read from the build's own provisioning profile; a build from TestFlight or the App Store carries none and is `production`; a simulator's is `development`); and the app's own id, its bundle identifier. It needs no permission: a phone whose person refused has a token too, and is shown nothing. With no answer of Apple's in 25 seconds (a phone with no network hears nothing from Apple, neither way), or when Apple refuses (a build signed without the push entitlement), the call fails. Calls that wait together ask Apple once. The shell keeps the token nowhere: every call asks Apple, which hands a phone a new token now and then (a restore, a new install), so a gene asks each time its page arrives |
+| `native://push/events` (stream) | every event flat, with a `kind`: `tap` (the person tapped a notification of this app; with `link`, the notification's own link, the text under `link` in its payload, when it has one) and `arrived` (a notification arrived while the app is on the screen; with `link` the same way). Nothing else of a notification is passed on |
+
+- **A tap that opens an app that was closed** comes before any page has
+  asked: it is kept, in memory, the last one only, and said to the first
+  stream that opens. A tap said to a page that goes within three seconds
+  of it (iOS ended its content while the app was behind, and the page loads
+  afresh) is kept again and said to the page that loads; a stream that
+  only closes because its screen was left is no page going.
+- **A notification that arrives with the app on the screen** is told to
+  every open stream as `arrived`, and iOS then shows nothing over the page:
+  the gene draws what it will. With no stream open nobody would tell the
+  person, so iOS shows it as it does with the app behind (banner, list,
+  sound).
+- **With the app behind or closed** iOS shows a notification by itself, with
+  nothing of the shell running; the shell hears of it only when it is tapped.
+- The token is the phone's own name at Apple. It reaches the page only when
+  the endpoint's `keep` names it, the shell keeps it in no file, no log and
+  no defaults, and a development build's lines say which fields were handed
+  over, never a value. Whether it is personal, and whether it may be written,
+  is the records' to say in `keep`.
+
+A build that is to have a token is signed with the push entitlement: its
+lane's xcconfig sets `CODE_SIGN_ENTITLEMENTS = <this repository>/Config/Push.entitlements`
+and `INSPO_PUSH_ENVIRONMENT` (`production` for TestFlight and the App Store,
+which is the default; `development` for a build run from Xcode on a phone,
+and for a simulator). The file asks two things of Apple: `aps-environment`
+(the Push Notifications capability) and
+`com.apple.developer.usernotifications.time-sensitive` (so a notification
+that says it is time-sensitive is shown as one). With automatic signing the
+first archive turns both on for the app's id. A build that does not name the
+file is signed as before, and its token call fails. Nothing else is set: no
+key of a push service, no background mode.
+
+On a simulator (iOS 16 or later, on a Mac with Apple's own chip) the three
+play with no phone: the question is iOS's own, Apple hands the simulator a
+token of its development environment, and `xcrun simctl push <device>
+<bundle id> <payload.json>` delivers a notification made on this Mac, to tap
+or to see arrive. `scripts/check-push.sh` checks the library on this Mac,
+with a phone that only records what it was asked.
 
 ## The Inspo desktop app (the Desktop target)
 
