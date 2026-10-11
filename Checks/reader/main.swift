@@ -703,5 +703,119 @@ do {
     check("paired: the stand-in as it starts", [bench.call("state")], ["battery=90 kind=state paired=1 state=connected"])
 }
 
+do {
+    // a simulator has no volume button: the scene press is one
+    let (reader, bench) = standIn()
+    reader.play("press")
+    reader.play("press")
+    check("the scene press plays the script's next event, as a press of a volume button does",
+          last(bench.heard, 2).map { $0.contains("fullName=Test Person One") && $0.contains("kind=read") ? "the first read" : $0 },
+          ["the first read", "kind=duplicate result=read"])
+    reader.play("away")
+    let count = bench.heard.count
+    reader.play("press")
+    check("and a scanner that is not there scans nothing by it either", [String(bench.heard.count - count)], ["0"])
+}
+
+// MARK: a read's four more fields: the document's number, sex, postal code and issuing state
+
+/// A read of a made-up document that says all four, or what the check gives.
+func read(_ kind: ScannerResult.Kind = .read, number: String? = "T1234567", sex: String? = "F", postal: String? = "99999",
+          state: String? = "CA", issues: [String] = []) -> ScannerResult {
+    ScannerResult(kind: kind, holder: ScannerHolder(fullName: "Test Person One", dateOfBirth: "1990-01-01", expirationDate: "2030-01-01",
+                                                   isOver21: true, isExpired: false, licenseNumber: number, sex: sex,
+                                                   postalCode: postal, issuingState: state), issueCodes: issues)
+}
+
+/// What a page is handed of the events through the shell's own door, by a
+/// stream whose endpoint keeps the fields named: the stream's first word,
+/// the state, is left out.
+func handed(keep: [String], _ events: [ScannerLibraryEvent], reading: Bool = true) -> [String] {
+    let (scanner, bench) = bench(paired: ["A"], state: "connected")
+    NativeLibraries.shared.register(bench.adapter)
+    var got: [String] = []
+    NativeLibraries.shared.handle(["id": "s", "url": "native://id-reader/events", "listen": true, "keep": keep],
+                                  answered: { _, value in got.append(fields(value)) }, failed: { _, error in got.append("error: " + error) })
+    if reading { _ = bench.call("start-reading") }
+    events.forEach(scanner.say)
+    NativeLibraries.shared.stopAll()
+    return Array(got.dropFirst())
+}
+
+let before = ["kind", "fullName", "dateOfBirth", "expirationDate", "isOver21", "isExpired", "issueCode"]
+let four = ["licenseNumber", "sex", "postalCode", "issuingState"]
+
+do {
+    check("a read's four more fields reach a page whose endpoint keeps them", handed(keep: before + four, [.result(read())]),
+          ["dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true issuingState=CA kind=read licenseNumber=T1234567 postalCode=99999 sex=F"])
+    check("and none of them reaches a page whose endpoint keeps what it kept before", handed(keep: before, [.result(read())]),
+          ["dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true kind=read"])
+    check("each reaches a page alone when it alone is named", four.flatMap { handed(keep: ["kind", $0], [.result(read())]) },
+          ["kind=read licenseNumber=T1234567", "kind=read sex=F", "kind=read postalCode=99999", "issuingState=CA kind=read"])
+    check("an endpoint that keeps nothing is handed nothing of a read", handed(keep: [], [.result(read())]), ["{}"])
+    check("a read that failed its validation says them as a read does", handed(keep: ["kind", "issueCode"] + four, [.result(read(.failedValidation, issues: ["EXPIRED"]))]),
+          ["issueCode=EXPIRED issuingState=CA kind=failedValidation licenseNumber=T1234567 postalCode=99999 sex=F"])
+    check("a repeat says none of them, and neither does a scan nobody reads",
+          handed(keep: before + four + ["result"], [.duplicate(read())]) + handed(keep: before + four, [.result(read())], reading: false),
+          ["kind=duplicate result=read", "kind=unread"])
+}
+
+do {
+    check("a document that says none of the four: no such field, and never an empty one",
+          handed(keep: ["kind"] + four, [.result(read(number: nil, sex: nil, postal: nil, state: nil)),
+                                         .result(read(number: "", sex: "", postal: "", state: "")),
+                                         .result(read(number: "  ", sex: " ", postal: "   ", state: " "))]),
+          ["kind=read", "kind=read", "kind=read"])
+    check("the number and the state are said without the document's padding",
+          handed(keep: ["kind", "licenseNumber", "issuingState"], [.result(read(number: " T1234567   ", state: "CA "))]),
+          ["issuingState=CA kind=read licenseNumber=T1234567"])
+    check("a sex is M, F or X as the document says it; a word that says it is not known is no field",
+          ["M", "F", "X", "unknown", "m", "9"].flatMap { handed(keep: ["kind", "sex"], [.result(read(sex: $0))]) },
+          ["kind=read sex=M", "kind=read sex=F", "kind=read sex=X", "kind=read", "kind=read", "kind=read"])
+    check("a postal code is said without its padding: nine digits whose last four are zeros are the first five, nine others are five and four, and any other is as written",
+          ["99999", "999990000", "999990000  ", "999981234", "99998-1234", "99999-0000", "K1A 0B1", "K1A0B1     "].map { IDScannerAdapter.postalCode($0) ?? "none" },
+          ["99999", "99999", "99999", "99998-1234", "99998-1234", "99999", "K1A 0B1", "K1A0B1"])
+    check("and one that is not there, or only padding, is none", [nil, "", "           "].map { IDScannerAdapter.postalCode($0) ?? "none" },
+          ["none", "none", "none"])
+}
+
+do {
+    // the stand-in: every scripted read gives made-up values for the four,
+    // so a lane's rehearsal plays them
+    let reads = StandInReader.script().compactMap { event -> ScannerHolder? in
+        if case .result(let result) = event { return result.holder }
+        return nil
+    }
+    check("the stand-in's every read says the four, each a made-up value",
+          reads.map { [$0.fullName, $0.licenseNumber ?? "none", $0.sex ?? "none", $0.postalCode ?? "none", $0.issuingState ?? "none"].joined(separator: " / ") },
+          ["Test Person One / TEST0000001 / F / 999990000 / CA", "Test Person Two / TEST0000002 / M / 99998-1234 / NY",
+           "Test Person Three / TEST0000003 / X / 99997 / TX"])
+    let reader = StandInReader()
+    NativeLibraries.shared.register(IDScannerAdapter(name: "id-reader", scanner: reader))
+    var got: [String] = []
+    for (id, keep) in [("named", ["kind"] + four), ("not named", ["kind", "fullName"])] {
+        NativeLibraries.shared.handle(["id": id, "url": "native://id-reader/events", "listen": true, "keep": keep],
+                                      answered: { id, value in got.append(id + ": " + fields(value)) }, failed: { id, error in got.append(id + ": error: " + error) })
+    }
+    NativeLibraries.shared.handle(["id": "r", "url": "native://id-reader/start-reading", "keep": [String]()], answered: { _, _ in }, failed: { _, _ in })
+    reader.press()
+    NativeLibraries.shared.stopAll()
+    check("a press of the stand-in hands them to the stream whose endpoint names them, tidied, and to no other", last(got, 2).sorted(),
+          ["named: issuingState=CA kind=read licenseNumber=TEST0000001 postalCode=99999 sex=F", "not named: fullName=Test Person One kind=read"])
+}
+
+do {
+    // the binding's template is compiled in no target here (the vendor's
+    // package is never in this repository): its text is held to the four
+    // fields by the library's own names, so a customer's binding copied
+    // from it passes them on
+    let template = (try? String(contentsOfFile: "Bindings/VendorIDScanner.swift", encoding: .utf8)) ?? ""
+    check("the binding's template passes the four on, by the library's own names",
+          ["licenseNumber: $0.licenseNumber", "sex: $0.sex", "postalCode: $0.fields[\"DAK\"]", "issuingState: $0.issuingState"]
+              .filter { !template.contains($0) }, [])
+    check("and still hands the adapter no raw scan, and no field of the document but the postal code",
+          ["scan.raw", "$0.raw", "$0.fields,", "$0.fields)"].filter(template.contains), [])
+}
+
 print("reader: \(passed) passed, \(failed) failed")
 if failed > 0 { exit(1) }

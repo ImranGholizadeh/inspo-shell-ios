@@ -63,6 +63,7 @@ stand-in takes for itself (on a simulator: `xcrun simctl openurl booted
 | `low-battery` | the battery at 8 percent, and the warning |
 | `unpaired` | no scanner is paired with this phone (a first pairing pairs the stand-in again); the stream's state event says `paired` 0 at once, whatever the state was |
 | `paired` | the stand-in as it starts: paired and connected |
+| `press` | a press of a volume button, for a simulator, which has none: the script's next event, or the confirming scan of a pairing that waits for it |
 
 ### A customer's brand: its icon and its splash
 
@@ -138,12 +139,42 @@ the same shape.
 | `forget` (call) | forgets the paired scanner the package's status names |
 | `start-pairing` (call, data `{venue, door, doorName}`, each optional) | starts pairing a scanner this phone has never used, and answers at once with `{kind: "pairing", step}`: `looking`, or the step of the pairing that already runs, which goes on. The data is where the scanner is paired; the package keeps it with the pairing, on the phone, beside iOS's id of the phone for the app's maker, which the shell adds |
 | `stop-pairing` (call) | stops the pairing that runs |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read, and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `unread` (nothing else: a scan, or its repeat, made while reading is stopped, so the page can say why nothing shows instead of showing nothing; one for each scan while the app is in front, to every open stream; none while the app is behind, and one when it comes to the front if any was made, however many); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode`, said once for each change of mode and to a stream that opens while it stands, or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read; the document's own words, each when the document says it: `licenseNumber`, `sex` (`M`, `F` or `X`), `postalCode` and `issuingState` (below); and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `unread` (nothing else: a scan, or its repeat, made while reading is stopped, so the page can say why nothing shows instead of showing nothing; one for each scan while the app is in front, to every open stream; none while the app is behind, and one when it comes to the front if any was made, however many); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode`, said once for each change of mode and to a stream that opens while it stands, or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
 
 The adapter configures the package once, on first use: its age and expiry
 checks on, its duplicate window as delivered, reporting off the phone never
 configured. Nothing but the fields above leaves the adapter, and the shell
 keeps only those the endpoint's `keep` names.
+
+### The document's own words: its number, sex, postal code and issuing state
+
+A read (and a read that failed its validation) says four fields more, by
+the scanner package's own names where it has one, each handed to the page
+only when the endpoint document's `keep` names it, exactly as written here:
+
+| `keep` names | What the page is handed |
+|---|---|
+| `licenseNumber` | the document's number, as the document writes it, without padding |
+| `sex` | `M`, `F` or `X`, as the document says it; a document that does not say it, or says it is not known, gives no field |
+| `postalCode` | the postal code of the holder's address, without the padding a barcode gives it: nine digits whose last four are zeros are the first five (`999990000` is `99999`), nine others are five and four (`99998-1234`), and any other code is as written |
+| `issuingState` | the two letters of the state or province that issued the document |
+
+A field the document does not say is not in the event: there is no empty
+value to read, and a gene's reader gives its own fallback. A gene whose
+endpoint names none of them is handed none of them, as before: the shell is
+not told which field is personal and does not need to be, since it hands
+over only what `keep` names and keeps nothing of a read itself, in no file,
+no log and no defaults. Which of them is personal, and which may be written,
+is the records' to say in `keep` (the engine holds a field marked personal
+and not written on the phone). A `duplicate` and an `unread` say none of
+them. The raw scan never leaves the binding, and of the document's other
+elements the binding reads only the postal code (the package gives it no
+name of its own). A customer's binding copied from
+`Bindings/VendorIDScanner.swift` before these fields passes none of them on
+and still builds: it is copied again to have them. The stand-in's three
+made-up people say all four (`TEST0000001`, `F`, `99999`, `CA`; and so on),
+so a rehearsal plays them. `scripts/check-reader.sh` holds each arriving
+when `keep` names it and not arriving when it does not.
 
 ### A paired scanner that is not connected: paired, the reason, at once
 

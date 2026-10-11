@@ -48,6 +48,13 @@ import UIKit
 //
 //   { kind: "read" | "failedRead" | "failedValidation",
 //     fullName, dateOfBirth, expirationDate, isOver21, isExpired,  (the holder's, when read)
+//     licenseNumber, sex, postalCode, issuingState,                (the document's own words,
+//                                                                   each when it says it:
+//                                                                   its number; M, F or X;
+//                                                                   the address's postal
+//                                                                   code without padding;
+//                                                                   the issuing state's or
+//                                                                   province's two letters)
 //     issueCode }                                                  (the first issue, if any)
 //   { kind: "duplicate", result }      a result the scanner suppressed as a
 //                                      repeat, with only its kind (read, ...)
@@ -128,9 +135,13 @@ import UIKit
 // A call must answer in 30 seconds and a pairing takes up to a minute, so
 // start-pairing answers at once and the steps come on the stream.
 //
-// Nothing else leaves the adapter: the raw scan, the document's number and
-// every other field of the vendor's result have no place in the surface's
-// types. The shell then keeps only the fields the endpoint's keep names (E41).
+// Nothing else leaves the adapter: the raw scan and every field of the
+// vendor's result that the surface's holder does not name have no place in
+// the surface's types. The shell then keeps only the fields the endpoint's
+// keep names (E41): a gene whose endpoint does not name the document's
+// number, its sex, its postal code or its issuing state is handed none of
+// them, and the shell is not told which of them is personal and keeps none
+// of them anywhere, in no file, no log and no defaults.
 
 /// The adapter: a NativeLibrary over a BluetoothIDScanner.
 final class IDScannerAdapter: NativeLibrary {
@@ -819,6 +830,32 @@ final class IDScannerAdapter: NativeLibrary {
         return value
     }
 
+    /// A word of the document without its padding, or nil when the
+    /// document does not say it: a gene is handed no empty field.
+    static func said(_ written: String?) -> String? {
+        let word = written?.trimmingCharacters(in: .whitespaces) ?? ""
+        return word.isEmpty ? nil : word
+    }
+
+    /// A postal code as a gene is handed it. A document's barcode pads one
+    /// to a fixed width: with spaces, and a five-digit code whose last four
+    /// are not known with zeros. So nine digits whose last four are zeros
+    /// are the first five, nine others are five and four with a hyphen, and
+    /// any other code (five digits, a province's letters and digits) is as
+    /// the document writes it, without the spaces around it.
+    static func postalCode(_ written: String?) -> String? {
+        guard let code = said(written) else { return nil }
+        let digits = code.filter { $0 != "-" }
+        guard digits.count == 9, digits.allSatisfy({ $0.isASCII && $0.isNumber }),
+              code.count == 9 || (code.count == 10 && code.dropFirst(5).first == "-") else { return code }
+        let (five, four) = (digits.prefix(5), digits.suffix(4))
+        return four == "0000" ? String(five) : "\(five)-\(four)"
+    }
+
+    /// The sexes a document says: any other word (not known, not said) is
+    /// no field.
+    static let sexes: Set<String> = ["M", "F", "X"]
+
     static func flat(_ result: ScannerResult) -> [String: Any] {
         var value: [String: Any] = ["kind": result.kind.rawValue]
         if let holder = result.holder {
@@ -827,6 +864,10 @@ final class IDScannerAdapter: NativeLibrary {
             value["isOver21"] = holder.isOver21
             if let expiry = holder.expirationDate { value["expirationDate"] = expiry }
             if let expired = holder.isExpired { value["isExpired"] = expired }
+            if let number = said(holder.licenseNumber) { value["licenseNumber"] = number }
+            if let sex = said(holder.sex), sexes.contains(sex) { value["sex"] = sex }
+            if let code = postalCode(holder.postalCode) { value["postalCode"] = code }
+            if let state = said(holder.issuingState) { value["issuingState"] = state }
         }
         if let code = result.issueCodes.first { value["issueCode"] = code }
         return value

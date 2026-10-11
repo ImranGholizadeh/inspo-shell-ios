@@ -5,8 +5,9 @@
 // adapter needs from a scanner package. A binding conforms the vendor's
 // package to it (built in a customer's workspace, never in the shell's
 // repository); the shell's stand-in conforms a made-up scanner. Nothing
-// beyond these types reaches the adapter: the raw scan, the document's
-// number and every other field of a vendor's result have no place here.
+// beyond these types reaches the adapter: the raw scan and every field of
+// a vendor's result that the holder's type below does not name have no
+// place here.
 
 /// The scanner's surface the adapter needs. Callbacks come on the main thread.
 public protocol BluetoothIDScanner: AnyObject {
@@ -174,18 +175,36 @@ public struct ScannerResult {
     }
 }
 
+/// The holder of a document that was read: the fields a gene may be handed,
+/// each only when its endpoint's keep names it. The first five are every
+/// read's; the four after them are the document's own words, each nil when
+/// the document does not say it or the binding does not pass it on.
 public struct ScannerHolder {
     public var fullName: String
     public var dateOfBirth: String // ISO, YYYY-MM-DD
     public var expirationDate: String?
     public var isOver21: Bool
     public var isExpired: Bool?
+    /// the document's number, as the document writes it
+    public var licenseNumber: String?
+    /// M, F or X, as the document says it
+    public var sex: String?
+    /// the postal code of the holder's address, as the document writes it
+    /// (padded or not: the adapter tidies it)
+    public var postalCode: String?
+    /// the state or province that issued the document, its two letters
+    public var issuingState: String?
 
-    public init(fullName: String, dateOfBirth: String, expirationDate: String?, isOver21: Bool, isExpired: Bool?) {
+    public init(fullName: String, dateOfBirth: String, expirationDate: String?, isOver21: Bool, isExpired: Bool?,
+                licenseNumber: String? = nil, sex: String? = nil, postalCode: String? = nil, issuingState: String? = nil) {
         self.fullName = fullName
         self.dateOfBirth = dateOfBirth
         self.expirationDate = expirationDate
         self.isOver21 = isOver21
         self.isExpired = isExpired
+        self.licenseNumber = licenseNumber
+        self.sex = sex
+        self.postalCode = postalCode
+        self.issuingState = issuingState
     }
 }

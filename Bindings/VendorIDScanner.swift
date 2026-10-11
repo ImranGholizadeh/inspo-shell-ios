@@ -14,9 +14,10 @@
 // IDScannerAdapter over IDScannerBinding.scanner().
 //
 // The binding only translates types: the vendor's events into
-// ScannerLibraryEvent, its scan into ScannerResult (the holder's five kept
-// fields and the issue codes, nothing else), its async calls into
-// callbacks on the main thread. Every mapping decision is the adapter's:
+// ScannerLibraryEvent, its scan into ScannerResult (the holder's fields
+// the surface names and the issue codes, nothing else: never the raw scan,
+// and of the document's other elements only the postal code), its async
+// calls into callbacks on the main thread. Every mapping decision is the adapter's:
 // in a first pairing the binding passes on each scanner the package hears
 // and the adapter picks which to connect.
 //
@@ -203,8 +204,12 @@ final class VendorIDScanner: BluetoothIDScanner {
         ScannerResult(
             kind: ScannerResult.Kind(rawValue: scan.result.rawValue) ?? .failedRead,
             holder: scan.parsed.map {
+                // the postal code has no name of its own in the package: it
+                // is the document's element DAK, the one element read here
                 ScannerHolder(fullName: $0.fullName, dateOfBirth: $0.dateOfBirth, expirationDate: $0.expirationDate,
-                              isOver21: $0.isOver21, isExpired: $0.isExpired)
+                              isOver21: $0.isOver21, isExpired: $0.isExpired,
+                              licenseNumber: $0.licenseNumber, sex: $0.sex, postalCode: $0.fields["DAK"],
+                              issuingState: $0.issuingState)
             },
             issueCodes: (scan.validation.errors + scan.validation.warnings).map(\.code))
     }

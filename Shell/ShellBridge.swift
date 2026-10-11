@@ -143,12 +143,27 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
                 HandOver.shared.copy(body, answered: answered, failed: failed)
             }
         case "native":
+            #if DEBUG
+            let endpoint = body["url"] as? String ?? "a stream's stop"
+            #endif
             NativeLibraries.shared.handle(body,
-                answered: { [weak self] id, value in self?.call("nativeAnswered", id, value) },
+                answered: { [weak self] id, value in
+                    #if DEBUG
+                    // a development build says which fields the page was handed, never the value of one
+                    print("shell: \(endpoint) handed the page: \(ShellBridge.names(of: value))")
+                    #endif
+                    self?.call("nativeAnswered", id, value)
+                },
                 failed: { [weak self] id, error in self?.call("nativeFailed", id, error) })
         default:
             break
         }
+    }
+
+    /// The names of an answer's fields, in order, for a development build's
+    /// own line: what a page was handed is said by name alone.
+    static func names(of value: [String: Any]) -> String {
+        value.isEmpty ? "nothing" : value.keys.sorted().joined(separator: ", ")
     }
 
     /// A haptic's pattern (the device neuron's modes), or the system's long

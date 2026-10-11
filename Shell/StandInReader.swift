@@ -19,7 +19,10 @@ import UIKit
 // stream, in turn (owner: "simulate scans using maybe the side button on
 // the phone"; iOS lets an app hear the volume buttons, never the side
 // button). The script is made-up people only, never a real ID; its dates
-// are counted from today, so the ages and expiries never go stale.
+// are counted from today, so the ages and expiries never go stale. Each
+// made-up person has a document's own words too (its number, sex, postal
+// code and issuing state), handed to a page only when its endpoint's keep
+// names them, as the scanner's are.
 //
 // A first pairing plays as the device's does, with the same button: two
 // made-up scanners are heard a second after it starts, the far one first,
@@ -58,6 +61,9 @@ import UIKit
 //                     pairs the stand-in again): the stream's state event
 //                     says paired 0 at once, whatever the state was
 //   paired            the stand-in as it starts: paired and connected
+//   press             a press of a volume button, for a simulator, which has
+//                     none: the script's next event, or a pairing's
+//                     confirming scan
 
 final class StandInReader: NSObject, BluetoothIDScanner {
     private var next = 0
@@ -94,21 +100,28 @@ final class StandInReader: NSObject, BluetoothIDScanner {
         format.calendar = calendar
         format.locale = Locale(identifier: "en_US_POSIX")
         format.dateFormat = "yyyy-MM-dd"
-        func holder(_ name: String, age: Int, expiresIn years: Int) -> ScannerHolder {
+        // the document's own words, made up: a number no state writes, a
+        // postal code no place has (written as a barcode pads it, as five
+        // and four, and plain), and each sex a document says
+        func holder(_ name: String, age: Int, expiresIn years: Int, number: String, sex: String, postal: String,
+                    state: String) -> ScannerHolder {
             let born = calendar.date(byAdding: DateComponents(year: -age, day: -30), to: today) ?? today
             let expires = calendar.date(byAdding: DateComponents(year: years, day: years < 0 ? -30 : 0), to: today) ?? today
             return ScannerHolder(fullName: name, dateOfBirth: format.string(from: born),
                                  expirationDate: format.string(from: expires),
-                                 isOver21: age >= 21, isExpired: years < 0)
+                                 isOver21: age >= 21, isExpired: years < 0,
+                                 licenseNumber: number, sex: sex, postalCode: postal, issuingState: state)
         }
-        let over21 = holder("Test Person One", age: 36, expiresIn: 4)
+        let over21 = holder("Test Person One", age: 36, expiresIn: 4, number: "TEST0000001", sex: "F", postal: "999990000", state: "CA")
         return [
             .result(ScannerResult(kind: .read, holder: over21, issueCodes: [])),
             .duplicate(ScannerResult(kind: .read, holder: over21, issueCodes: [])),
             .result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"])),
-            .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Two", age: 18, expiresIn: 5),
+            .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Two", age: 18, expiresIn: 5, number: "TEST0000002", sex: "M",
+                                                                             postal: "99998-1234", state: "NY"),
                                   issueCodes: ["UNDER_MINIMUM_AGE"])),
-            .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Three", age: 41, expiresIn: -1),
+            .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Three", age: 41, expiresIn: -1, number: "TEST0000003", sex: "X",
+                                                                             postal: "99997", state: "TX"),
                                   issueCodes: ["EXPIRED"])),
             .result(ScannerResult(kind: .failedValidation, holder: nil, issueCodes: ["NOT_AAMVA"])),
             .battery(15),
@@ -239,6 +252,8 @@ final class StandInReader: NSObject, BluetoothIDScanner {
             emit(.warning(.keyboardMode))
             if connection.state != "disconnected" { emit(.connection("disconnected", away: .unknown)) }
             answerWaiting(StandInError.notConnected)
+        case "press":
+            press()
         case "low-battery":
             emit(.battery(8))
             emit(.warning(.lowBattery))
