@@ -79,13 +79,51 @@ do {
 }
 
 do {
-    check("the script says no number of the shell's: it sets no covered edge of its own and hands the page nothing but the event",
+    check("the event's script says no number of the shell's: it sets no covered edge of its own and hands the page nothing but the event",
           ["inspoSafeArea", "postMessage", "webkit", "innerHeight", "screen."].filter(CoveredEdges.script.contains), [])
+}
+
+// MARK: the web view's own covered edges, said to a page as it starts
+
+do {
+    // a page reads the hook as the real page does: the larger of the hook's word and its browser's, for each edge
+    let reads = "function read(browser) { var host = window.inspoSafeArea || {}; return ['top', 'right', 'bottom', 'left'].map(function (e) { return Math.max(browser[e] || 0, parseFloat(host[e]) || 0); }).join(' '); }"
+    let p = page(reads)
+    check("before the shell has said anything a page reads what its browser says: 0 for every edge as it starts",
+          [said(p, "read({})")], ["0 0 0 0"])
+    _ = said(p, CoveredEdges.said(top: 62, right: 0, bottom: 34, left: 0))
+    check("the shell's words say the four edges through the hook a page reads, and a page that starts reads them though its browser still says 0",
+          [said(p, "JSON.stringify(window.inspoSafeArea)"), said(p, "read({})")], [#"{"top":62,"right":0,"bottom":34,"left":0}"#, "62 0 34 0"])
+    check("when the browser has said them too the page reads the same: the two are one number", [said(p, "read({top: 62, bottom: 34})")], ["62 0 34 0"])
+    _ = said(p, CoveredEdges.said(top: 0, right: 59, bottom: 21, left: 59) + CoveredEdges.readAgain)
+    check("the edges change (a phone turned): the hook is said again whole, so it holds no edge the web view no longer has, and the page is told a resize",
+          [said(p, "read({right: 59, bottom: 21, left: 59})"), said(p, "events.join(' ')")], ["0 59 21 59", "resize"])
+    check("an edge is never said as less than 0 or as no number",
+          [CoveredEdges.said(top: -4, right: .nan, bottom: .infinity, left: 0.5)],
+          ["window.inspoSafeArea = { top: 0.0, right: 0.0, bottom: 0.0, left: 0.5 };"])
+}
+
+do {
     let bridge = (try? String(contentsOfFile: "Shell/ShellBridge.swift", encoding: .utf8)) ?? ""
-    check("the phone's bridge adds it to every page, as the page starts, in the page's main frame, in a world of the shell's own",
-          [String(bridge.contains("source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))"))], ["true"])
-    check("and still loads the page as it did, and tells the page no covered edge itself",
-          ["loadPage()\n        return view", "contentInsetAdjustmentBehavior = .never"].filter { !bridge.contains($0) } + ["inspoSafeArea"].filter(bridge.contains), [])
+    check("the phone's bridge adds the event's script to every page, as the page starts, in the page's main frame, in a world of the shell's own",
+          [String(bridge.contains("WKUserScript(source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient),"))], ["true"])
+    check("and says the web view's own covered edges to a page as it starts, once they are known, in the page's own world, where the page reads them",
+          [String(bridge.contains("scripts.append(WKUserScript(source: Self.said(edges), injectionTime: .atDocumentStart, forMainFrameOnly: true))")),
+           String(bridge.contains("CoveredEdges.said(top: edges.top, right: edges.right, bottom: edges.bottom, left: edges.left)"))], ["true", "true"])
+    check("the edges are the web view's own safe area and no other number: nothing in the bridge writes one",
+          [String(bridge.contains("edgesTold?(safeAreaInsets)")), String(bridge.components(separatedBy: "CoveredEdges.said(").count - 1),
+           String(bridge.components(separatedBy: "inspoSafeArea").count - 1)], ["true", "1", "0"])
+    check("when they change, every page that starts is told the new ones, the page shown is told them with a resize, and the first page is loaded once they are known",
+          ["scripts.removeAllUserScripts()\n        Self.pageScripts(edges: edges).forEach(scripts.addUserScript)",
+           "if firstLoadAsked { webView.evaluateJavaScript(Self.said(edges) + CoveredEdges.readAgain) }\n        firstLoad()",
+           "view.edgesTold = { [weak self] edges in self?.coveredEdges(edges) }",
+           "guard window != nil, bounds.width > 0, safeAreaInsets != told else { return }"].filter { !bridge.contains($0) }, [])
+    check("the page is loaded in three places and no other: the first page once the edges are known, a page that did not load again, and a page whose content iOS ended",
+          bridge.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.contains("loadPage()") && !$0.hasPrefix("private func") },
+          ["private lazy var again = LoadAgain(load: { [weak self] in self?.loadPage() })", "loadPage()", "loadPage()"])
+    check("a web view laid out in no window loads its page all the same, a second on, and the first page is loaded once",
+          ["DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.firstLoad() }",
+           "guard !firstLoadAsked else { return }\n        firstLoadAsked = true\n        loadPage()"].filter { !bridge.contains($0) }, [])
 }
 
 print("edges: \(passed) passed, \(failed) failed")

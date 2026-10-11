@@ -136,8 +136,10 @@ do {
     check("what the shell tells a page is told only while the page held is the build's own, and an answer only to the page that asked",
           ["guard waiting.isFor(page) else { return }", "guard loaded, let webView, door.isOwn(PageOrigin(webView.url)) else {",
            "if door.isOwn(PageOrigin(webView.url)) {", "waiting.pageChanged()"].filter { !bridge.contains($0) }, [])
-    check("the bridge runs words in the page in one place alone, behind those guards",
-          [String(bridge.components(separatedBy: "evaluateJavaScript(").count - 1)], ["2"])
+    check("the bridge runs its words for a page in one place alone, behind those guards; the one other thing it runs in a page is the web view's own covered edges, which a page of any origin reads from the web view too",
+          bridge.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.contains("evaluateJavaScript(") }.sorted(),
+          ["if firstLoadAsked { webView.evaluateJavaScript(Self.said(edges) + CoveredEdges.readAgain) }",
+           "waiting.take().forEach { webView.evaluateJavaScript($0) }", "webView.evaluateJavaScript(js)"])
 }
 
 print("door: \(passed) passed, \(failed) failed")

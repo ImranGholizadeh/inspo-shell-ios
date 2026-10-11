@@ -68,16 +68,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         config.mediaTypesRequiringUserActionForPlayback = []
         config.applicationNameForUserAgent = "InspoShell/1"
         config.userContentController.add(self, name: "inspo")
-        // what this shell does, said before the page's own script runs: the
-        // page never hands it a request it would not answer (ShellActs.swift)
-        config.userContentController.addUserScript(WKUserScript(
-            source: ShellActs.script(ShellActs.phone), injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // the web view tells a new page its covered edges a moment after it
-        // starts and makes no event of it: the page is told a resize when
-        // they change, and reads them itself (CoveredEdges.swift)
-        config.userContentController.addUserScript(WKUserScript(
-            source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
-        let view = WKWebView(frame: .zero, configuration: config)
+        Self.pageScripts(edges: nil).forEach(config.userContentController.addUserScript)
+        let view = ShellWebView(frame: .zero, configuration: config)
         view.uiDelegate = self
         view.navigationDelegate = self
         view.scrollView.contentInsetAdjustmentBehavior = .never // the page places itself by the safe-area tokens
@@ -105,8 +97,55 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         network.start(queue: DispatchQueue.global(qos: .utility))
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification,
                                                object: nil, queue: .main) { [weak self] _ in self?.again.wake() }
-        loadPage()
+        // the first page is loaded when the web view is first laid out in
+        // its window: its covered edges are known then, and are said to the
+        // page as it starts (CoveredEdges.swift). A web view that is laid
+        // out in no window within a second loads its page all the same.
+        view.edgesTold = { [weak self] edges in self?.coveredEdges(edges) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.firstLoad() }
         return view
+    }
+
+    /// The scripts run at the start of every page: what this shell does,
+    /// said before the page's own script runs, so the page never hands it a
+    /// request it would not answer (ShellActs.swift); the event of the
+    /// covered edges changing; and the web view's covered edges themselves,
+    /// once they are known (CoveredEdges.swift).
+    static func pageScripts(edges: UIEdgeInsets?) -> [WKUserScript] {
+        var scripts = [
+            WKUserScript(source: ShellActs.script(ShellActs.phone), injectionTime: .atDocumentStart, forMainFrameOnly: true),
+            WKUserScript(source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient),
+        ]
+        if let edges {
+            scripts.append(WKUserScript(source: Self.said(edges), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        return scripts
+    }
+
+    private static func said(_ edges: UIEdgeInsets) -> String {
+        CoveredEdges.said(top: edges.top, right: edges.right, bottom: edges.bottom, left: edges.left)
+    }
+
+    private var firstLoadAsked = false
+
+    /// Loads the first page, once.
+    private func firstLoad() {
+        guard !firstLoadAsked else { return }
+        firstLoadAsked = true
+        loadPage()
+    }
+
+    /// The web view's covered edges are known, or have changed: every page
+    /// that starts from now on is told them as it starts; the page that is
+    /// shown is told them now, with the event by which it reads its screen
+    /// again; and the first page is loaded, if it has not been.
+    private func coveredEdges(_ edges: UIEdgeInsets) {
+        guard let webView else { return }
+        let scripts = webView.configuration.userContentController
+        scripts.removeAllUserScripts()
+        Self.pageScripts(edges: edges).forEach(scripts.addUserScript)
+        if firstLoadAsked { webView.evaluateJavaScript(Self.said(edges) + CoveredEdges.readAgain) }
+        firstLoad()
     }
 
     /// Loads the gene's page: afresh while none has loaded, else again where it is.
@@ -314,6 +353,29 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         if door.isOwn(PageOrigin(webView.url)) {
             waiting.take().forEach { webView.evaluateJavaScript($0) }
         }
+    }
+}
+
+/// The shell's web view: it says its covered edges when it is first laid
+/// out in its window, and again whenever they change.
+final class ShellWebView: WKWebView {
+    var edgesTold: ((UIEdgeInsets) -> Void)?
+    private var told: UIEdgeInsets?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        tell()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        tell()
+    }
+
+    private func tell() {
+        guard window != nil, bounds.width > 0, safeAreaInsets != told else { return }
+        told = safeAreaInsets
+        edgesTold?(safeAreaInsets)
     }
 }
 

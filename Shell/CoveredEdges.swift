@@ -19,13 +19,27 @@ import Foundation
 // until the web view was in its window and knew its covered top, the page
 // still read 0 as it started, three starts of three.
 //
-// So the shell makes the event the web view leaves out, and nothing else:
-// a script it adds to every page keeps one hidden mark padded by the web
-// view's own four edges, and when the mark's size changes (the edges have
-// been told, or have changed) it tells the window a resize, the event a
-// page already takes to read its screen again. The page reads the edges
-// itself, from the web view, as before: the shell says no number, so what
-// the page is told cannot differ from what is so.
+// So the shell does two things.
+//
+// It makes the event the web view leaves out (script, below): a script it
+// adds to every page keeps one hidden mark padded by the web view's own
+// four edges, and when the mark's size changes (the edges have been told,
+// or have changed) it tells the window a resize, the event a page already
+// takes to read its screen again. By this the shell says no number: the
+// page reads the edges itself.
+//
+// And, because a page told so a moment after it has drawn is not drawn
+// again by today's engine (a screen whose size is the same and whose
+// covered edges differ draws nothing again), it says the web view's own
+// covered edges to a page as the page starts (said, below), through the
+// hook a page already reads for an edge its browser does not know of:
+// window.inspoSafeArea, of which the page takes the larger of the hook's
+// word and the browser's for each edge. The numbers are the web view's own
+// (its safe area, in points, which are a page's px): the same the page's
+// browser tells it a twentieth of a second later. The shell says them
+// again, with a resize, whenever they change, so the hook never holds an
+// edge the web view no longer has; and the first page is loaded when the
+// web view is first laid out in its window, when its edges are known.
 
 enum CoveredEdges {
     /// The script, run at the start of every page, in a world of the
@@ -48,4 +62,14 @@ enum CoveredEdges {
       document.documentElement.appendChild(mark);
     })();
     """
+
+    /// The words that say the web view's covered edges to a page, through
+    /// the hook a page reads: each edge in points, none less than 0.
+    static func said(top: Double, right: Double, bottom: Double, left: Double) -> String {
+        func edge(_ points: Double) -> String { String(points.isFinite && points > 0 ? points : 0) }
+        return "window.inspoSafeArea = { top: \(edge(top)), right: \(edge(right)), bottom: \(edge(bottom)), left: \(edge(left)) };"
+    }
+
+    /// The words that have a page read its screen again.
+    static let readAgain = "window.dispatchEvent(new Event(\"resize\"));"
 }

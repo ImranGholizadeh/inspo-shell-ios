@@ -72,8 +72,26 @@ So the shell makes the event the web view leaves out
 mark padded by the web view's own four edges, and when the mark's size
 changes it tells the window a `resize`, the event a page already takes to
 read its screen again. The shell says no number by it: the page reads the
-edges itself. `scripts/check-edges.sh` runs the script in a JavaScript
-engine against a document that only records.
+edges itself.
+
+That tells a page; it does not move what a page has already drawn. A page
+told a moment after its first drawing tells its engine the true screen, and
+today's engine draws nothing again for a screen whose size is the same and
+whose covered edges differ: on the real page, served from this Mac, 16
+starts of 20 stayed under the status bar with the event alone. So the shell
+also says the web view's own covered edges to a page as the page starts,
+through the hook a page already reads for an edge its browser does not know
+of: `window.inspoSafeArea = {top, right, bottom, left}`, of which the page
+takes the larger of the hook's word and the browser's for each edge. The
+numbers are the web view's own safe area, in points (a page's px): the same
+its browser tells the page a twentieth of a second later, and no other. The
+shell says them again, with a `resize`, whenever they change, so the hook
+holds no edge the web view no longer has; and the first page is loaded when
+the web view is first laid out in its window, when the edges are known (a
+web view laid out in no window loads its page a second on, all the same).
+With both, 20 starts of 20 on the real page are drawn under the status bar's
+edge and not under the bar. `scripts/check-edges.sh` runs both scripts in a
+JavaScript engine against a document that only records.
 
 ## Building
 
