@@ -22,7 +22,10 @@ import Foundation
 //     that opened the app) is told only while the page the web view holds
 //     is the build's own; and an answer is told only to the page that
 //     asked: when another page takes its place, what waited for the page
-//     before is nobody's.
+//     before is nobody's. The page held is the one whose first bytes last
+//     came in, not the web view's address: that is a load's in flight as
+//     soon as one starts, so a page of another origin with a load of the
+//     build's own page in flight would else be told as the build's own.
 //
 // The camera's grant holds to the build's host in the same way
 // (ShellBridge.swift). The shell does not keep a page of another origin
@@ -86,6 +89,13 @@ struct PageWaiting {
     /// The page the web view holds, counted: one more each time another
     /// page takes its place.
     private(set) var page = 0
+    /// The origin of the page the web view holds: the page whose first
+    /// bytes last came in. None before any has, and none after iOS ended a
+    /// page's content. It is not the web view's own address, which is the
+    /// address of a load in flight from the moment one starts, while the
+    /// page before it is still the one shown and the one that would be
+    /// told.
+    private(set) var held: PageOrigin?
     private var waiting: [(words: String, page: Int?)] = []
 
     /// Whether something asked by that page may still be told: only while
@@ -100,10 +110,12 @@ struct PageWaiting {
         waiting.append((words, asked))
     }
 
-    /// Another page has taken the place of the one held: what waited for
-    /// the page before is nobody's.
-    mutating func pageChanged() {
+    /// Another page has taken the place of the one held (its first bytes
+    /// came in), or none has (iOS ended the page's content): what waited
+    /// for the page before is nobody's.
+    mutating func pageChanged(to origin: PageOrigin?) {
         page += 1
+        held = origin
         waiting.removeAll { $0.page != nil }
     }
 

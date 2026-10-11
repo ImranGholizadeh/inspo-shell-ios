@@ -277,14 +277,16 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// that asked (page) and is told to that page alone: when another has
     /// taken its place it is nobody's. Nothing is told to a page that is
     /// not the build's own: what no page asked for (a link that opened the
-    /// app) waits for one that is (OwnPage.swift).
+    /// app) waits for one that is (OwnPage.swift). The page told is the
+    /// page held, the one whose first bytes last came in: never the web
+    /// view's address, which is a load's in flight as soon as one starts.
     private func call(_ hook: String, for page: Int? = nil, _ values: Any...) {
         guard waiting.isFor(page) else { return }
         guard JSONSerialization.isValidJSONObject(values),
               let data = try? JSONSerialization.data(withJSONObject: values),
               let args = String(data: data, encoding: .utf8) else { return }
         let js = "(function(h,a){var i=window.inspo;if(i&&i[h]){i[h].apply(null,a)}else{(window.inspoWaiting=window.inspoWaiting||[]).push([h].concat(a))}})(\"\(hook)\",\(args))"
-        guard loaded, let webView, door.isOwn(PageOrigin(webView.url)) else {
+        guard loaded, let webView, door.isOwn(waiting.held) else {
             waiting.wait(js, for: page)
             return
         }
@@ -297,7 +299,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// again (owner, 2026-09-29: "Recover where it broke").
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         loaded = false
-        waiting.pageChanged() // what waited for the page that ended is nobody's
+        waiting.pageChanged(to: nil) // no page is held, and what waited for the page that ended is nobody's
         state.pageLoaded = false // the splash, not an empty view, until it has loaded again
         PhonePush.shared.library.pageGone() // a tap it may not have taken is kept for the page that loads
         NativeLibraries.shared.stopAll() // the page that asked is gone
@@ -339,10 +341,12 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         HandOver.shared.pageGone()
     }
 
-    /// Another page has taken the place of the one the web view held: what
-    /// the shell had to tell the page before is nobody's now.
+    /// Another page has taken the place of the one the web view held: it
+    /// is the page held from here (at this moment the web view's address
+    /// is this page's), and what the shell had to tell the page before is
+    /// nobody's now.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        waiting.pageChanged()
+        waiting.pageChanged(to: PageOrigin(webView.url))
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -350,7 +354,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         again.loaded()
         state.pageLoaded = true
         // a page that is not the build's own is told nothing: what waits, waits on
-        if door.isOwn(PageOrigin(webView.url)) {
+        if door.isOwn(waiting.held) {
             waiting.take().forEach { webView.evaluateJavaScript($0) }
         }
     }

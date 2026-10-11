@@ -37,6 +37,10 @@ word that it was refused. What the shell tells a page (an answer, a stream's
 event, a link that opened the app) is told only while the page the web view
 holds is the build's own, and an answer only to the page that asked: when
 another page takes its place, what waited for the page before is nobody's.
+The page told is the one whose first bytes last came in, never the web
+view's own address: that is the address of a load in flight as soon as one
+starts, and a page of another origin with a load of the build's own page
+in flight would else be told the link that opened the app.
 The shell does not keep such a page out of the web view (a sign-in that
 passes through another site and comes back is one); it answers it nothing.
 `scripts/check-door.sh` holds it on this Mac.

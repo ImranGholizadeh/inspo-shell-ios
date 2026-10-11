@@ -110,7 +110,7 @@ do {
     waiting.wait("a link that opened the app", for: nil)
     waiting.wait("an answer for the first page", for: first)
     check("while the page that asked is held, its answer may be told", [String(waiting.isFor(first)), String(waiting.isFor(nil))], ["true", "true"])
-    waiting.pageChanged()
+    waiting.pageChanged(to: own)
     check("another page takes its place: the answer is nobody's, to tell now or later; what no page asked for still waits",
           [String(waiting.isFor(first)), String(waiting.isFor(waiting.page)), String(waiting.isFor(nil))] + waiting.take(),
           ["false", "true", "true", "a link that opened the app"])
@@ -118,6 +118,32 @@ do {
     waiting.wait("an answer for the second page", for: waiting.page)
     waiting.wait("a second link", for: nil)
     check("what waits for the page that is held is told in its order", waiting.take(), ["an answer for the second page", "a second link"])
+}
+
+// MARK: who is told: the page whose first bytes last came in, never the address of a load in flight
+
+do {
+    // the play of the read: a page of another origin is held, a load of the
+    // build's own page is in flight, and the app is opened by a link
+    let other = PageOrigin(URL(string: "https://other.example/")), build = PageOrigin(URL(string: "https://gene.example/tally"))
+    var waiting = PageWaiting()
+    waiting.pageChanged(to: other) // the other origin's page's first bytes came in: it is the page held
+    let inFlight = build              // the web view's own address is already the build's page's: its load has begun
+    check("while a page of another origin is held, with a load of the build's own page in flight, the page held is not the build's own: it is told nothing, the link that opened the app least of all",
+          [String(door.isOwn(waiting.held)), String(door.isOwn(inFlight))], ["false", "true"])
+    waiting.wait("the link that opened the app", for: nil)
+    check("the link waits", [String(waiting.isFor(nil)), String(door.isOwn(waiting.held))], ["true", "false"])
+    waiting.pageChanged(to: build) // the build's own page's first bytes came in
+    check("and is told to the build's own page once its first bytes are in", [String(door.isOwn(waiting.held))] + waiting.take(),
+          ["true", "the link that opened the app"])
+    waiting.pageChanged(to: nil) // iOS ended the page's content: no page is held
+    check("when iOS has ended a page's content no page is held, and nothing is told until a page of the build's own has come in",
+          [String(door.isOwn(waiting.held))], ["false"])
+    var fresh = PageWaiting()
+    check("before any page's first bytes have come in no page is held", [String(door.isOwn(fresh.held))], ["false"])
+    fresh.pageChanged(to: build)
+    fresh.pageChanged(to: other)
+    check("the page held is the last whose first bytes came in", [String(door.isOwn(fresh.held)), String(fresh.page)], ["false", "2"])
 }
 
 // MARK: the phone's bridge passes every request through the door
@@ -134,16 +160,19 @@ do {
     check("the door's own page is the build's page, and nothing else",
           [String(bridge.contains("private lazy var door = PageDoor(own: PageOrigin(startURL))"))], ["true"])
     check("what the shell tells a page is told only while the page held is the build's own, and an answer only to the page that asked",
-          ["guard waiting.isFor(page) else { return }", "guard loaded, let webView, door.isOwn(PageOrigin(webView.url)) else {",
-           "if door.isOwn(PageOrigin(webView.url)) {", "waiting.pageChanged()"].filter { !bridge.contains($0) }, [])
+          ["guard waiting.isFor(page) else { return }", "guard loaded, let webView, door.isOwn(waiting.held) else {",
+           "if door.isOwn(waiting.held) {"].filter { !bridge.contains($0) }, [])
+    check("the bridge reads who is told from the page held, never from the web view's address, which is a load's in flight as soon as one starts: the address is read to say the page whose first bytes came in, and to see whether a page was ever loaded, and nowhere else",
+          bridge.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.contains("webView.url") }.sorted(),
+          ["if state.pageLoaded, webView.url != nil {", "waiting.pageChanged(to: PageOrigin(webView.url))"])
     check("the bridge runs its words for a page in one place alone, behind those guards; the one other thing it runs in a page is the web view's own covered edges, which a page of any origin reads from the web view too",
           bridge.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { $0.contains("evaluateJavaScript(") }.sorted(),
           ["if firstLoadAsked { webView.evaluateJavaScript(Self.said(edges) + CoveredEdges.readAgain) }",
            "waiting.take().forEach { webView.evaluateJavaScript($0) }", "webView.evaluateJavaScript(js)"])
-    check("the bridge counts each page that takes another's place: when a page's first bytes are in, and when iOS ended a page's content",
-          [String(bridge.components(separatedBy: "waiting.pageChanged()").count - 1),
-           String(bridge.contains("func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {\n        waiting.pageChanged()\n    }")),
-           String(bridge.contains("loaded = false\n        waiting.pageChanged() // what waited for the page that ended is nobody's"))], ["2", "true", "true"])
+    check("the bridge counts each page that takes another's place, and says which page is held: the page whose first bytes are in, and none when iOS ended a page's content",
+          [String(bridge.components(separatedBy: "waiting.pageChanged(").count - 1),
+           String(bridge.contains("func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {\n        waiting.pageChanged(to: PageOrigin(webView.url))\n    }")),
+           String(bridge.contains("loaded = false\n        waiting.pageChanged(to: nil) // no page is held, and what waited for the page that ended is nobody's"))], ["2", "true", "true"])
 }
 
 print("door: \(passed) passed, \(failed) failed")
