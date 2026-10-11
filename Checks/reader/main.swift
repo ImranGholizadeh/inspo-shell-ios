@@ -864,5 +864,27 @@ do {
           ["9999-90000", "999990-000", "99999-000-", "-999990000"])
 }
 
+// MARK: a word of the document with new lines in it, or of great length
+
+do {
+    check("a word's padding is its spaces, tabs and new lines: the number, the state and the postal code are said without any of them",
+          handed(keep: ["kind"] + four, [.result(read(number: "T1234567\n", sex: "F\n", postal: "\t999990000 \r\n", state: "\nCA\t"))]),
+          ["issuingState=CA kind=read licenseNumber=T1234567 postalCode=99999 sex=F"])
+    check("a word that is only new lines is no field",
+          handed(keep: ["kind"] + four, [.result(read(number: "\n", sex: "\n", postal: "\r\n", state: "\n\n"))]), ["kind=read"])
+    check("a word with a new line or another mark that is no character inside it is not a word of a document: no field, never a part of it",
+          handed(keep: ["kind"] + four, [.result(read(number: "T123\n4567", sex: "F", postal: "99999\u{0}", state: "C\u{7}A"))]), ["kind=read sex=F"])
+    let long = String(repeating: "7", count: 64), longer = String(repeating: "7", count: 65)
+    check("a word of 64 characters is said whole; one of 65 or of a hundred thousand is no field, never cut: a cut number is another number",
+          handed(keep: ["kind", "licenseNumber"], [.result(read(number: long)), .result(read(number: longer)),
+                                                   .result(read(number: String(repeating: "9", count: 100_000)))]),
+          ["kind=read licenseNumber=" + long, "kind=read", "kind=read"])
+    check("the bound is each of the four's: a state or a postal code longer than it is no field",
+          handed(keep: ["kind"] + four, [.result(read(number: "T1", sex: "F", postal: longer, state: longer))]), ["kind=read licenseNumber=T1 sex=F"])
+    check("text that is no Latin letter, and text that looks like code, is said as written: it is a text, and the shell reads nothing in it",
+          handed(keep: ["kind", "licenseNumber", "issuingState"], [.result(read(number: "Ж-12 №7", state: "<b>"))]),
+          ["issuingState=<b> kind=read licenseNumber=Ж-12 №7"])
+}
+
 print("reader: \(passed) passed, \(failed) failed")
 if failed > 0 { exit(1) }

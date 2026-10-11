@@ -830,11 +830,22 @@ final class IDScannerAdapter: NativeLibrary {
         return value
     }
 
-    /// A word of the document without its padding, or nil when the
-    /// document does not say it: a gene is handed no empty field.
+    /// The most characters a word of the document's four own words may
+    /// have: several times the longest the documents of today write (a
+    /// number of 25).
+    static let longestWord = 64
+
+    /// A word of the document without its padding (its spaces, tabs and
+    /// new lines), or nil when the document does not say it: a gene is
+    /// handed no empty field. A word that still holds a new line or another
+    /// mark that is no character, or is longer than a word may be, is not a
+    /// word a document writes: it is no field, and never a part of it (a
+    /// cut number is another number).
     static func said(_ written: String?) -> String? {
-        let word = written?.trimmingCharacters(in: .whitespaces) ?? ""
-        return word.isEmpty ? nil : word
+        let word = written?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !word.isEmpty, word.count <= longestWord,
+              !word.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }) else { return nil }
+        return word
     }
 
     /// A postal code as a gene is handed it. A document's barcode pads one

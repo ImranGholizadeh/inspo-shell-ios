@@ -222,7 +222,11 @@ only when the endpoint document's `keep` names it, exactly as written here:
 | `issuingState` | the two letters of the state or province that issued the document |
 
 A field the document does not say is not in the event: there is no empty
-value to read, and a gene's reader gives its own fallback. A gene whose
+value to read, and a gene's reader gives its own fallback. Each of the four
+is said without its padding (spaces, tabs, new lines), and one that is
+longer than 64 characters, or still holds a new line or another mark that
+is no character, is not a word a document writes: it is no field, never a
+part of it. What is said is a text, whatever is in it. A gene whose
 endpoint names none of them is handed none of them, as before: the shell is
 not told which field is personal and does not need to be, since it hands
 over only what `keep` names and keeps nothing of a read itself, in no file,
