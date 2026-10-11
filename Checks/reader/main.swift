@@ -817,5 +817,52 @@ do {
           ["scan.raw", "$0.raw", "$0.fields,", "$0.fields)"].filter(template.contains), [])
 }
 
+// MARK: the shell prints and keeps nothing of a read
+
+/// A source's lines, each without the space around it.
+func lines(_ path: String) -> [String] {
+    ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+}
+
+/// The lines a source prints, and whether each is a development build's alone (inside #if DEBUG).
+func printed(_ path: String) -> [(line: String, debug: Bool)] {
+    var out: [(String, Bool)] = [], debug = 0
+    for line in lines(path) {
+        if line.hasPrefix("#if DEBUG") { debug += 1 } else if line.hasPrefix("#endif"), debug > 0 { debug -= 1 }
+        if !line.hasPrefix("//"), line.contains("print(") { out.append((line, debug > 0)) }
+    }
+    return out
+}
+
+do {
+    let kept = ["UserDefaults", "FileManager", ".write(", "os_log", "NSLog", "Logger(", "SecItem", "Keychain", "dump(", "debugPrint("]
+    check("the adapter and the door print nothing and keep nothing: no defaults, no file, no log, no keychain",
+          ["Shell/IDScanner.swift", "Shell/NativeLibrary.swift"].flatMap { path in
+              (kept + ["print("]).filter { word in lines(path).contains { !$0.hasPrefix("//") && $0.contains(word) } }.map { path + ": " + $0 } }, [])
+    check("the stand-in prints one line, a development build's alone, that names the scene played and nothing of a read; it keeps nothing",
+          printed("Shell/StandInReader.swift").map { ($0.debug ? "" : "IN EVERY BUILD: ") + $0.line }
+              + kept.filter { word in lines("Shell/StandInReader.swift").contains { !$0.hasPrefix("//") && $0.contains(word) } },
+          [#"print("stand-in: \(scene)") // a development build says so"#])
+    let bridge = printed("Shell/ShellBridge.swift")
+    check("every line the bridge prints is a development build's alone", bridge.filter { !$0.debug }.map(\.line), [])
+    check("the bridge's line of what a page was handed says the fields' names and never a value, and no other line it prints holds an answer",
+          bridge.map(\.line).filter { $0.contains("value") || $0.contains("body") || $0.contains("handed the page") },
+          [#"print("shell: \(endpoint) handed the page: \(ShellBridge.names(of: value))")"#])
+    check("the names of an answer's fields are its keys alone",
+          lines("Shell/ShellBridge.swift").filter { $0.contains("value.keys") }, [#"value.isEmpty ? "nothing" : value.keys.sorted().joined(separator: ", ")"#])
+    let template = (try? String(contentsOfFile: "Bindings/VendorIDScanner.swift", encoding: .utf8)) ?? ""
+    check("the binding's template reads one element of the document, the postal code, and no second",
+          [String(template.components(separatedBy: ".fields[").count - 1), String(template.components(separatedBy: ".fields").count - 1)], ["1", "1"])
+}
+
+do {
+    check("a read that failed, with no holder, says none of the four: not as an empty word either",
+          handed(keep: before + four, [.result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"]))]),
+          ["issueCode=incomplete kind=failedRead"])
+    check("ten characters are five and four only with their hyphen after the fifth: a hyphen anywhere else, or two, is a code as written",
+          ["9999-90000", "999990-000", "99999-000-", "-999990000"].map { IDScannerAdapter.postalCode($0) ?? "none" },
+          ["9999-90000", "999990-000", "99999-000-", "-999990000"])
+}
+
 print("reader: \(passed) passed, \(failed) failed")
 if failed > 0 { exit(1) }
