@@ -16,7 +16,8 @@ func check(_ name: String, _ got: [String], _ want: [String]) {
 }
 
 /// A page's world that only records: the events the window was told, the
-/// observers made, what was put in the document.
+/// observers made, what was put in the document; and the web view's own
+/// word of the four edges, which the check sets.
 let world = """
 var events = [], observers = [], appended = [], errors = [];
 var window = this;
@@ -28,17 +29,21 @@ var document = {
   createElement: function (tag) { return { tag: tag, attrs: {}, style: {}, setAttribute: function (k, v) { this.attrs[k] = v; } }; },
   documentElement: { appendChild: function (el) { appended.push(el); } }
 };
-// the web view's word of the mark's size: its two sides' edges together, and its top and bottom's
-function told(across, down) { observers[0].heard([{ borderBoxSize: [{ inlineSize: across, blockSize: down }] }]); }
+// the web view's own word of the covered edges: what the mark's padding is
+var webView = [0, 0, 0, 0];
+function getComputedStyle(el) { return { paddingTop: webView[0] + "px", paddingRight: webView[1] + "px", paddingBottom: webView[2] + "px", paddingLeft: webView[3] + "px" }; }
+// the web view says the edges (top, right, bottom, left), and the mark's size is seen to change or not
+function told(top, right, bottom, left) { webView = [top, right, bottom, left]; observers[0].heard([{}]); }
 """
 
-/// A fresh world with the script run in it.
-func page(_ before: String = "") -> JSContext {
+/// A fresh world with the script run in it: said is what the shell says
+/// the edges are to this page as it starts, if it knows them.
+func page(_ before: String = "", said: [Double]? = nil) -> JSContext {
     let context = JSContext()!
     context.exceptionHandler = { context, error in context?.evaluateScript("errors.push(1)"); print("the script failed: \(error?.toString() ?? "")") }
     context.evaluateScript(world)
     context.evaluateScript(before)
-    context.evaluateScript(CoveredEdges.script)
+    context.evaluateScript(CoveredEdges.script(saidAtStart: said))
     return context
 }
 func said(_ context: JSContext, _ words: String) -> String { context.evaluateScript(words)?.toString() ?? "nothing" }
@@ -55,32 +60,59 @@ do {
               + [said(p, "appended[0].attrs['aria-hidden']")], ["true"])
     check("its size is watched with its padding (the mark itself is nothing by nothing)", [said(p, "observers[0].options.box")], ["border-box"])
     check("making the mark tells the page nothing", [said(p, "events.length")], ["0"])
-    _ = said(p, "told(0, 0)")
+    _ = said(p, "told(0, 0, 0, 0)")
     check("the web view's first word of the mark, as the page starts with every edge at 0, is no change: nothing is told",
           [said(p, "events.length")], ["0"])
-    _ = said(p, "told(0, 62)")
-    check("the covered top is told a moment later: the window is told one resize, the event a page already takes to read its screen again",
+    _ = said(p, "told(62, 0, 34, 0)")
+    check("the shell said nothing to this page as it started, and the covered edges are told a moment later: the window is told one resize, the event a page already takes to read its screen again",
           [said(p, "events.join(' ')")], ["resize"])
-    _ = said(p, "told(0, 62)")
+    _ = said(p, "told(62, 0, 34, 0)")
     check("a word that changes nothing tells nothing more", [said(p, "events.length")], ["1"])
-    _ = said(p, "told(0, 96); told(47, 21); told(0, 0)")
-    check("each later change of the edges (a home bar, a phone turned, none) is one resize", [said(p, "events.join(' ')")],
-          ["resize resize resize resize"])
+    _ = said(p, "told(62, 0, 96, 0); told(0, 59, 21, 59); told(0, 59, 21, 0); told(0, 0, 0, 0)")
+    check("each later change of the edges (a home bar, a phone turned, one side alone, none) is one resize", [said(p, "events.join(' ')")],
+          ["resize resize resize resize resize"])
+}
+
+do {
+    // the shell said the edges to this page as it started, through the hook
+    let p = page(said: [62, 0, 34, 0])
+    _ = said(p, "told(0, 0, 0, 0)")
+    _ = said(p, "told(62, 0, 34, 0)")
+    check("the shell said the edges to this page as it started: the web view's own first word of those same edges tells the page nothing it has not read, and is told by no resize",
+          [said(p, "events.length"), said(p, "errors.length")], ["0", "0"])
+    _ = said(p, "told(0, 59, 21, 59)")
+    check("the next change is told", [said(p, "events.join(' ')")], ["resize"])
+    _ = said(p, "told(62, 0, 34, 0)")
+    check("and a change back to the edges said at the start is told too: only the first is left out", [said(p, "events.join(' ')")], ["resize resize"])
+    let other = page(said: [62, 0, 34, 0])
+    _ = said(other, "told(47, 0, 34, 0)")
+    check("a first word that is not what the shell said is told: the page must read again", [said(other, "events.join(' ')")], ["resize"])
+    let near = page(said: [47.333333333333336, 0, 34, 0])
+    _ = said(near, "told(47.3333, 0, 34, 0)")
+    check("the same edge said to a hair's difference by the two is the same edge", [said(near, "events.length")], ["0"])
+    let none = page(said: [0, 0, 0, 0])
+    _ = said(none, "told(0, 0, 0, 0); told(20, 0, 0, 0)")
+    check("a screen the shell said covers nothing, then covered: told", [said(none, "events.join(' ')")], ["resize"])
 }
 
 do {
     // a page that starts with its edges already known (it was loaded again in a web view that knows them)
-    let p = page()
-    _ = said(p, "told(0, 62); told(0, 62)")
+    let p = page("webView = [62, 0, 34, 0];")
+    _ = said(p, "told(62, 0, 34, 0); told(62, 0, 34, 0)")
     check("a page that starts with its edges already told hears no resize for them", [said(p, "events.length")], ["0"])
+    _ = said(p, "told(0, 0, 0, 0)")
+    check("and is told when they change", [said(p, "events.join(' ')")], ["resize"])
     let none = page("ResizeObserver = undefined;")
     check("a web view with no such observer: the script does nothing, and fails nothing",
           [said(none, "errors.length"), said(none, "appended.length"), said(none, "events.length")], ["0", "0", "0"])
 }
 
 do {
-    check("the event's script says no number of the shell's: it sets no covered edge of its own and hands the page nothing but the event",
-          ["inspoSafeArea", "postMessage", "webkit", "innerHeight", "screen."].filter(CoveredEdges.script.contains), [])
+    check("the event's script says no covered edge to the page: it sets none of its own and hands the page nothing but the event",
+          ["inspoSafeArea", "postMessage", "webkit", "innerHeight", "screen."].filter(CoveredEdges.script(saidAtStart: [62, 0, 34, 0]).contains), [])
+    check("what it is given of the shell's word is the four edges, never less than 0, or nothing",
+          [CoveredEdges.script(saidAtStart: [62, -1, .nan, 0.5]).contains("var said = [62.0, 0.0, 0.0, 0.5];"),
+           CoveredEdges.script(saidAtStart: nil).contains("var said = null;")].map(String.init), ["true", "true"])
 }
 
 // MARK: the web view's own covered edges, said to a page as it starts
@@ -105,8 +137,8 @@ do {
 
 do {
     let bridge = (try? String(contentsOfFile: "Shell/ShellBridge.swift", encoding: .utf8)) ?? ""
-    check("the phone's bridge adds the event's script to every page, as the page starts, in the page's main frame, in a world of the shell's own",
-          [String(bridge.contains("WKUserScript(source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient),"))], ["true"])
+    check("the phone's bridge adds the event's script to every page, as the page starts, in the page's main frame, in a world of the shell's own, and gives it the same edges it says through the hook",
+          [String(bridge.contains("WKUserScript(source: CoveredEdges.script(saidAtStart: edges.map { [$0.top, $0.right, $0.bottom, $0.left] }),\n                         injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient),"))], ["true"])
     check("and says the web view's own covered edges to a page as it starts, once they are known, in the page's own world, where the page reads them",
           [String(bridge.contains("scripts.append(WKUserScript(source: Self.said(edges), injectionTime: .atDocumentStart, forMainFrameOnly: true))")),
            String(bridge.contains("CoveredEdges.said(top: edges.top, right: edges.right, bottom: edges.bottom, left: edges.left)"))], ["true", "true"])

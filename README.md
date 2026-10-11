@@ -94,7 +94,10 @@ holds no edge the web view no longer has; and the first page is loaded when
 the web view is first laid out in its window, when the edges are known (a
 web view laid out in no window loads its page a second on, all the same).
 With both, 20 starts of 20 on the real page are drawn under the status bar's
-edge and not under the bar. `scripts/check-edges.sh` runs both scripts in a
+edge and not under the bar. And since the page has then read the edges as
+it started, the web view's own first word of those same edges, a moment
+later, is told by no resize: a page holds its transitions for a while at a
+resize, and would at every start. Every other change of the edges is told. `scripts/check-edges.sh` runs both scripts in a
 JavaScript engine against a document that only records.
 
 ## Building

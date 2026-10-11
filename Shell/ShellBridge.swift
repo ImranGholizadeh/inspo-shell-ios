@@ -114,7 +114,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     static func pageScripts(edges: UIEdgeInsets?) -> [WKUserScript] {
         var scripts = [
             WKUserScript(source: ShellActs.script(ShellActs.phone), injectionTime: .atDocumentStart, forMainFrameOnly: true),
-            WKUserScript(source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient),
+            WKUserScript(source: CoveredEdges.script(saidAtStart: edges.map { [$0.top, $0.right, $0.bottom, $0.left] }),
+                         injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient),
         ]
         if let edges {
             scripts.append(WKUserScript(source: Self.said(edges), injectionTime: .atDocumentStart, forMainFrameOnly: true))
