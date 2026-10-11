@@ -203,6 +203,19 @@ do {
 }
 
 do {
+    // two calls that overlap, Apple silent: each has its own 25 seconds
+    let bench = Bench()
+    bench.call("token")
+    bench.clock.pass(10)
+    bench.call("token")
+    bench.clock.pass(15.1)
+    check("one call's limit fails that call alone: a call made ten seconds after it still waits", bench.answered,
+          ["error: push: Apple did not answer in time"])
+    bench.clock.pass(10)
+    check("and fails at its own 25 seconds", bench.answered, ["error: push: Apple did not answer in time", "error: push: Apple did not answer in time"])
+}
+
+do {
     let bench = Bench()
     bench.call("subscribe", ["topics": ["a"]])
     bench.call("")
@@ -325,6 +338,33 @@ do {
 }
 
 do {
+    // the three seconds, at their edges
+    func saidAgain(after seconds: Double) -> String {
+        let bench = Bench()
+        let old = bench.open()
+        bench.library.tapped(payload)
+        bench.clock.pass(seconds)
+        bench.library.pageGone()
+        old.stop()
+        return bench.open().heard().isEmpty ? "not kept" : "kept"
+    }
+    check("a page that goes 2.75 seconds after a tap, or exactly 3, has it kept; one that goes a moment after 3 does not",
+          [saidAgain(after: 2.75), saidAgain(after: 3), saidAgain(after: 3.01)], ["kept", "kept", "not kept"])
+    let bench = Bench()
+    let old = bench.open()
+    _ = bench.library.arrived(payload)
+    bench.clock.pass(1)
+    bench.library.pageGone()
+    old.stop()
+    check("a notification that arrived is told once: a page that goes a second after it has nothing kept for the page that loads",
+          old.heard() + bench.open().heard(), ["kind=arrived link=made-up-app://open?from=notification"])
+    let one = Bench()
+    let stream = one.open()
+    one.library.tapped(["url": "made-up-app://by-another-key", "href": "made-up-app://x", "Link": "made-up-app://y"])
+    check("the link is the text under link and under no other key", stream.heard(), ["kind=tap"])
+}
+
+do {
     let bench = Bench()
     check("a notification that arrives with the app on the screen and no stream open is iOS's to show, and is kept for nobody",
           [String(bench.library.arrived(payload))] + bench.open().heard(), ["false"])
@@ -396,9 +436,11 @@ do {
         PushEnvironment.of(profile: profile("<key>get-task-allow</key><true/>"), simulator: false),
         PushEnvironment.of(profile: Data([0x00, 0x01, 0x02]), simulator: false),
         PushEnvironment.of(profile: profile("<key>aps-environment</key><string>production</string>"), simulator: true),
+        PushEnvironment.of(profile: profile("<key>aps-environment</key><string>another word</string>"), simulator: false),
+        PushEnvironment.of(profile: profile("<key>aps-environment</key><string>Development</string>"), simulator: false),
     ].map(\.rawValue)
-    check("the environment is the build's own profile's: development, production; a build with no profile (the App Store's, TestFlight's) is production, and so is a profile that does not say or cannot be read; a simulator's is development whatever it carries",
-          said, ["development", "production", "production", "production", "production", "development"])
+    check("the environment is the build's own profile's: development, production; a build with no profile (the App Store's, TestFlight's) is production, and so is a profile that does not say or cannot be read; a simulator's is development whatever it carries; and a profile that says any word but development is production",
+          said, ["development", "production", "production", "production", "production", "development", "production", "production"])
 }
 
 // MARK: what the sources hold to
@@ -439,6 +481,120 @@ do {
     let file = (try? String(contentsOfFile: "Config/Push.entitlements", encoding: .utf8)) ?? ""
     check("and the entitlements file asks the one the build says, never one of its own",
           [String(file.contains("<key>aps-environment</key>\n\t<string>$(INSPO_PUSH_ENVIRONMENT)</string>"))], ["true"])
+}
+
+// MARK: the phone's part and the app's wiring: nothing at launch, nothing by itself, nothing printed or kept
+
+/// A source's lines.
+func lines(_ path: String) -> [String] {
+    ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+}
+
+/// What a source does in every build: its lines without comments, blank
+/// lines and what only a development build compiles (#if DEBUG to its
+/// #else or #endif), each without the space around it and any comment after it.
+func code(_ source: [String]) -> [String] {
+    var out: [String] = [], debug = 0
+    for raw in source {
+        var line = raw.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("#if DEBUG") { debug += 1; continue }
+        if debug > 0, line.hasPrefix("#else") { debug -= 1; continue }
+        if line.hasPrefix("#endif") { if debug > 0 { debug -= 1 }; continue }
+        if debug > 0 || line.isEmpty || line.hasPrefix("//") { continue }
+        if let comment = line.range(of: " // ") { line = String(line[..<comment.lowerBound]).trimmingCharacters(in: .whitespaces) }
+        out.append(line)
+    }
+    return out
+}
+
+/// What the function that holds the marker does in every build: the lines
+/// between its opening and the brace that closes it.
+func body(holding marker: String, in path: String) -> [String] {
+    let all = lines(path)
+    guard let at = all.firstIndex(where: { $0.contains(marker) }),
+          let start = all[...at].lastIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("func ") || $0.contains(" func ") }),
+          let open = all[start...].firstIndex(where: { $0.hasSuffix("{") }) else { return ["no function holds \(marker)"] }
+    let indent = String(all[start].prefix { $0 == " " })
+    guard let close = all[(open + 1)...].firstIndex(where: { $0 == indent + "}" }) else { return ["the function is not closed"] }
+    return code(Array(all[(open + 1)..<close]))
+}
+
+/// The lines a source prints, and whether each is a development build's alone.
+func printed(_ path: String) -> [(line: String, debug: Bool)] {
+    var out: [(String, Bool)] = [], debug = 0
+    for raw in lines(path) {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("#if DEBUG") { debug += 1 } else if line.hasPrefix("#endif"), debug > 0 { debug -= 1 }
+        if !line.hasPrefix("//"), line.contains("print(") { out.append((line, debug > 0)) }
+    }
+    return out
+}
+
+let shell = ((try? FileManager.default.contentsOfDirectory(atPath: "Shell")) ?? []).filter { $0.hasSuffix(".swift") }.sorted().map { "Shell/" + $0 }
+/// The lines of the shell's code that hold a word, as file: line.
+func uses(_ word: String) -> [String] {
+    shell.flatMap { path in code(lines(path)).filter { $0.contains(word) }.map { path.dropFirst(6) + ": " + $0 } }
+}
+
+do {
+    check("the shell's sources are read", [String(shell.count >= 13)], ["true"])
+    check("as the app launches the one thing done for push is that the notification centre is given its delegate: nothing is asked of the person, of Apple or of the library",
+          body(holding: "didFinishLaunchingWithOptions", in: "Shell/PhonePush.swift"),
+          ["UNUserNotificationCenter.current().delegate = PhonePush.shared", "return true"])
+    check("the app has its delegate, or Apple's answer and a tap come to nobody",
+          uses("UIApplicationDelegateAdaptor"), ["ShellApp.swift: @UIApplicationDelegateAdaptor(ShellAppDelegate.self) private var appDelegate"])
+    check("the phone is registered with Apple in one place, the function the library's token call reaches, and that function does nothing else",
+          uses("registerForRemoteNotifications") + body(holding: "func registerWithApple", in: "Shell/PhonePush.swift"),
+          ["PhonePush.swift: UIApplication.shared.registerForRemoteNotifications()", "registering.append(done)", "UIApplication.shared.registerForRemoteNotifications()"])
+    check("the person is asked in one place, the function the library's permission call reaches, and that function does nothing else",
+          uses("requestAuthorization") + body(holding: "func askPermission", in: "Shell/PhonePush.swift"),
+          ["PhonePush.swift: UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { allowed, _ in",
+           "UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { allowed, _ in",
+           "DispatchQueue.main.async { done(allowed ? .allowed : .refused) }", "}"])
+    check("asking the person is reached from the library's permission call alone",
+          uses("askPermission"),
+          ["PhonePush.swift: func askPermission(_ done: @escaping (PushPermission) -> Void) {",
+           "Push.swift: func askPermission(_ done: @escaping (PushPermission) -> Void)",
+           "Push.swift: if Self.asks(data) { phone.askPermission(said) } else { phone.permission(said) }"])
+    check("and registering with Apple from the library's token call alone",
+          uses("registerWithApple"),
+          ["PhonePush.swift: func registerWithApple(_ done: @escaping (Result<Data, NativeError>) -> Void) {",
+           "Push.swift: func registerWithApple(_ done: @escaping (Result<Data, NativeError>) -> Void)",
+           "Push.swift: phone.registerWithApple { [weak self] registered in"])
+    check("the bridge does three things with push and no more: it puts the library among the shell's libraries, and tells it of a page that goes, twice; the app's own file does none",
+          uses("PhonePush.shared").filter { !$0.hasPrefix("PhonePush.swift") },
+          ["ShellBridge.swift: NativeLibraries.shared.register(PhonePush.shared.library)", "ShellBridge.swift: PhonePush.shared.library.pageGone()",
+           "ShellBridge.swift: PhonePush.shared.library.pageGone()"])
+    check("no part of the shell calls the push library by itself: its calls come through the libraries' door, from a page",
+          shell.filter { $0 != "Shell/NativeLibrary.swift" }.flatMap { path in code(lines(path)).filter { $0.contains("library.call(") || $0.contains(".call(\"token\"") || $0.contains(".call(\"permission\"") }.map { path + ": " + $0 } }, [])
+    for (name, marker) in [("iOS ended the page's content", "func webViewWebContentProcessDidTerminate"), ("a page loads afresh", "didStartProvisionalNavigation")] {
+        let does = body(holding: marker, in: "Shell/ShellBridge.swift")
+        let gone = does.firstIndex(of: "PhonePush.shared.library.pageGone()") ?? Int.max, stopped = does.firstIndex(of: "NativeLibraries.shared.stopAll()") ?? -1
+        check("when \(name) the push library is told the page has gone, before the page's streams are stopped", [String(gone < stopped)], ["true"])
+    }
+    check("a tap is told for the tap itself, not for a notification swept away, and on the main thread",
+          body(holding: "didReceive response: UNNotificationResponse", in: "Shell/PhonePush.swift"),
+          ["if response.actionIdentifier == UNNotificationDefaultActionIdentifier {",
+           "Self.onMain { self.library.tapped(response.notification.request.content.userInfo) }", "}", "completionHandler()"])
+    check("a notification in front: the library is asked, and iOS shows nothing when a page was told and shows it when none was",
+          body(holding: "willPresent notification: UNNotification", in: "Shell/PhonePush.swift"),
+          ["let told = Self.onMain { self.library.arrived(notification.request.content.userInfo) }",
+           "completionHandler(told ? [] : [.banner, .list, .sound, .badge])"])
+    check("Apple's answer goes to those that wait and nowhere else",
+          body(holding: "didRegisterForRemoteNotificationsWithDeviceToken", in: "Shell/PhonePush.swift")
+              + body(holding: "func registered(", in: "Shell/PhonePush.swift"),
+          ["PhonePush.shared.registered(.success(deviceToken))", "let waiting = registering", "registering = []", "waiting.forEach { $0(result) }"])
+    check("the phone's part prints three lines, each a development build's alone, and none holds a token, an answer or anything of a notification",
+          printed("Shell/PhonePush.swift").map { ($0.debug ? "" : "IN EVERY BUILD: ") + $0.line },
+          [#"print(told ? "shell: a notification arrived with the app on the screen; the page was told, and iOS shows nothing""#,
+           #"print("shell: a notification was tapped") // never what it says"#,
+           #"print("shell: Apple did not register this phone for push: \(error.localizedDescription)")"#])
+    check("every line the shell prints is a development build's alone",
+          shell.flatMap { path in printed(path).filter { !$0.debug }.map { path + ": " + $0.line } }, [])
+    check("push writes to no log, keeps nothing in the keychain, the defaults or a file, and dumps nothing",
+          ["Shell/Push.swift", "Shell/PhonePush.swift"].flatMap { path in
+              ["os_log", "Logger(", "NSLog", "dump(", "debugPrint(", "SecItem", "Keychain", "UserDefaults", "FileManager", ".write(", "NSUbiquitous"]
+                  .filter { word in code(lines(path)).contains { $0.contains(word) } }.map { path + ": " + $0 } }, [])
 }
 
 func last(_ list: [String]) -> [String] { Array(list.suffix(1)) }
