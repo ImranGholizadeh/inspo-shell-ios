@@ -169,10 +169,16 @@ final class PushLibrary: NativeLibrary {
     }
 
     /// Whether a permission call asks the person. It does, unless the
-    /// gene's data says {ask: 0}.
+    /// gene's data says {ask: 0}: the number 0, false, or either as a text
+    /// ("0", "false": a record's value may arrive as one). iOS's question
+    /// is shown once ever, so only a plain word for it is taken as "do
+    /// not ask"; any other word asks, as no data does.
     static func asks(_ data: Any?) -> Bool {
-        guard let ask = (data as? [String: Any])?["ask"] as? NSNumber else { return true }
-        return ask.boolValue
+        switch (data as? [String: Any])?["ask"] {
+        case let ask as NSNumber: return ask.boolValue
+        case let ask as String: return !["0", "false"].contains(ask.trimmingCharacters(in: .whitespaces).lowercased())
+        default: return true
+        }
     }
 
     /// One token call. Apple is asked once for all that wait together,

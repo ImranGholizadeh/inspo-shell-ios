@@ -150,6 +150,18 @@ do {
     check("the permission call asks Apple for nothing", bench.phone.asked.filter { $0 == "register" }, [])
 }
 
+do {
+    // a record's value may arrive as a text
+    let bench = Bench()
+    for ask in ["0", "false", " 0 ", "False"] as [Any] { bench.call("permission", ["ask": ask]) }
+    bench.call("permission", ["ask": false])
+    check("ask said as the text 0 or false, as the number 0 or as false, asks nothing", bench.phone.asked, ["read", "read", "read", "read", "read"])
+    let other = Bench()
+    for ask in ["1", "true", "", "no", "00", NSNull(), ["0"], 2] as [Any] { other.call("permission", ["ask": ask]) }
+    check("any other word under ask asks, as no data does: only a plain 0 or false is the word for not asking",
+          other.phone.asked, Array(repeating: "ask", count: 8))
+}
+
 // MARK: the token call
 
 do {
