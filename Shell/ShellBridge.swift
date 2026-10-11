@@ -72,6 +72,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         // page never hands it a request it would not answer (ShellActs.swift)
         config.userContentController.addUserScript(WKUserScript(
             source: ShellActs.script(ShellActs.phone), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // the web view tells a new page its covered edges a moment after it
+        // starts and makes no event of it: the page is told a resize when
+        // they change, and reads them itself (CoveredEdges.swift)
+        config.userContentController.addUserScript(WKUserScript(
+            source: CoveredEdges.script, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .defaultClient))
         let view = WKWebView(frame: .zero, configuration: config)
         view.uiDelegate = self
         view.navigationDelegate = self

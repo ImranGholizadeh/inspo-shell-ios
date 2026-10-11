@@ -49,6 +49,32 @@ timing on this Mac). Until a page has loaded the app shows its splash, as the
 launch screen draws it, not an empty view; while iOS says there is no network,
 a small sign near the bottom edge says so, in no language.
 
+### The edges the hardware covers, and when a page is told of them
+
+A page reads the edges of the screen the hardware covers (the status bar
+and its island, the home bar) from the web view itself
+(`env(safe-area-inset-top)` and the three others), and the engine offers
+them to a gene as the safe-area tokens. The shell lays the web view over the
+whole screen.
+
+A page that has just started reads 0 for every edge: the web view tells a
+new page's content its covered edges only after the page's first drawing,
+about a twentieth of a second after its script began, and makes no event
+of it (the window's size has not changed). Measured on a simulator, 20
+starts of 20: 0 as the page started, the true 62 between 46 and 82 ms
+later, no resize event. Loading the page later does not change it (held
+until the web view was in its window and knew its covered top: 0 still,
+three starts of three), nor does loading an empty page of the same site
+first (five of five).
+
+So the shell makes the event the web view leaves out
+(`Shell/CoveredEdges.swift`): a script added to every page keeps one hidden
+mark padded by the web view's own four edges, and when the mark's size
+changes it tells the window a `resize`, the event a page already takes to
+read its screen again. The shell says no number by it: the page reads the
+edges itself. `scripts/check-edges.sh` runs the script in a JavaScript
+engine against a document that only records.
+
 ## Building
 
 Nothing of a customer is in this repository. `Config/Default.xcconfig` points
