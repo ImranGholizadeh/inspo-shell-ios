@@ -841,15 +841,23 @@ final class IDScannerAdapter: NativeLibrary {
     /// number of 25).
     static let longestWord = 64
 
+    /// The most bytes such a word may have as it is written (UTF-8): four
+    /// for each character it may have, so a word of the longest kind of
+    /// character fits whole. A character as a person reads it has no bound
+    /// of its own (marks pile on one letter without end), so the count of
+    /// characters alone bounds nothing.
+    static let longestWordBytes = 4 * longestWord
+
     /// A word of the document without its padding (its spaces, tabs and
     /// new lines), or nil when the document does not say it: a gene is
     /// handed no empty field. A word that still holds a new line or another
-    /// mark that is no character, or is longer than a word may be, is not a
-    /// word a document writes: it is no field, and never a part of it (a
-    /// cut number is another number).
+    /// mark that is no character, or is longer than a word may be, in its
+    /// characters or in its bytes, is not a word a document writes: it is
+    /// no field, and never a part of it (a cut number is another number).
+    /// A scanner's own id is held to the same.
     static func said(_ written: String?) -> String? {
         let word = written?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !word.isEmpty, word.count <= longestWord,
+        guard !word.isEmpty, word.utf8.count <= longestWordBytes, word.count <= longestWord,
               !word.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }) else { return nil }
         return word
     }

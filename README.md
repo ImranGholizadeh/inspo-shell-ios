@@ -231,7 +231,8 @@ only when the endpoint document's `keep` names it, exactly as written here:
 A field the document does not say is not in the event: there is no empty
 value to read, and a gene's reader gives its own fallback. Each of the four
 is said without its padding (spaces, tabs, new lines), and one that is
-longer than 64 characters, or still holds a new line or another mark that
+longer than 64 characters or than 256 bytes as it is written (marks piled
+on one letter are one character, however many), or still holds a new line or another mark that
 is no character, is not a word a document writes: it is no field, never a
 part of it. What is said is a text, whatever is in it. A gene whose
 endpoint names none of them is handed none of them, as before: the shell is
@@ -267,7 +268,7 @@ leaves the adapter. A scanner that has given no serial (the package reads
 it from the scanner a moment after it first connects, and keeps it with the
 pairing) gives no field: there is no empty value to read, and a gene's
 reader gives its own fallback. It is said as a document's word is: without
-padding, and one longer than 64 characters or with a mark that is no
+padding, and one longer than 64 characters or 256 bytes, or with a mark that is no
 character in it is no field. It says nothing of a person; whether it is
 written is the records' to say in `keep`, as for every field. A customer's
 binding copied from `Bindings/VendorIDScanner.swift` before this field

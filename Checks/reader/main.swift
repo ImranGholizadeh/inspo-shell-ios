@@ -964,5 +964,27 @@ do {
           ["scannerID: scan.identity.peripheralId", "?? scan.identity.peripheralId"].filter(template.contains), [])
 }
 
+// MARK: a word's bound holds its bytes too
+
+do {
+    // marks piled on one letter are one character as a person reads it: a
+    // word of one letter and five thousand marks is "one character long"
+    let piled = "S" + String(repeating: "\u{0301}", count: 5_000)
+    check("a scanner's id of one letter under five thousand marks (one character, ten thousand bytes) is no field",
+          handed(keep: ["kind", "scannerId"], [.result(scan(by: piled))]), ["kind=read"])
+    check("and neither is a document's word so written, any of the four",
+          handed(keep: ["kind"] + four, [.result(read(number: piled, sex: "F" + String(repeating: "\u{0301}", count: 300), postal: piled, state: piled))]), ["kind=read"])
+    // the bound in bytes is four for each character a word may have: a word
+    // of 64 characters of the longest kind fits, whole
+    let widest = String(repeating: "\u{1D7DF}", count: 64) // a digit written in four bytes
+    check("a word of 64 characters of four bytes each (256 bytes) is said whole",
+          handed(keep: ["kind", "scannerId", "licenseNumber"], [.result({ var r = read(number: widest); r.scannerID = widest; return r }())]),
+          ["kind=read licenseNumber=" + widest + " scannerId=" + widest])
+    check("one mark more on its last character (still 64 characters, 258 bytes) is no field, never cut",
+          handed(keep: ["kind", "scannerId"], [.result(scan(by: widest + "\u{0301}"))]), ["kind=read"])
+    check("a word of letters with their marks, as a name is written, is said as written",
+          handed(keep: ["kind", "scannerId"], [.result(scan(by: "SE\u{0301}RIE-A\u{030A}-0042"))]), ["kind=read scannerId=SE\u{0301}RIE-A\u{030A}-0042"])
+}
+
 print("reader: \(passed) passed, \(failed) failed")
 if failed > 0 { exit(1) }
