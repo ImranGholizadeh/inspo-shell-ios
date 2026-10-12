@@ -304,7 +304,7 @@ do {
           ["pairing confirm", "pairing paired"])
     reader.press()
     check("the script has not moved: the next press plays its first event", last(bench.heard, 1),
-          ["read +dateOfBirth+expirationDate+fullName+isExpired+isOver21+issuingState+licenseNumber+postalCode+sex"])
+          ["read +dateOfBirth+expirationDate+fullName+isExpired+isOver21+issuingState+licenseNumber+postalCode+scannerId+sex"])
 }
 
 do {
@@ -315,7 +315,7 @@ do {
     bench.clock.pass(30)
     check("a press before it waits is a scan as ever; with no press after, the stand-in's pairing fails as not-confirmed",
           bench.heard.filter { !$0.hasPrefix("state") },
-          ["pairing looking", "read +dateOfBirth+expirationDate+fullName+isExpired+isOver21+issuingState+licenseNumber+postalCode+sex", "pairing connecting",
+          ["pairing looking", "read +dateOfBirth+expirationDate+fullName+isExpired+isOver21+issuingState+licenseNumber+postalCode+scannerId+sex", "pairing connecting",
            "pairing confirm", "pairing failed not-confirmed"])
     _ = bench.call("start-pairing")
     bench.clock.pass(4)

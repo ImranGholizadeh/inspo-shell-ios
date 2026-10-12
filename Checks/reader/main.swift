@@ -886,5 +886,83 @@ do {
           ["issuingState=<b> kind=read licenseNumber=Ж-12 №7"])
 }
 
+// MARK: the scanner's own id
+
+/// A scan by a scanner that says its own id, or what the check gives; a
+/// scan that read no document has no holder.
+func scan(_ kind: ScannerResult.Kind = .read, by id: String? = "SN-000123", read document: Bool = true, issues: [String] = []) -> ScannerResult {
+    var result = document ? read(kind, issues: issues) : ScannerResult(kind: kind, holder: nil, issueCodes: issues)
+    result.scannerID = id
+    return result
+}
+
+do {
+    check("the scanner's own id reaches a page whose endpoint keeps it, beside every other field it keeps",
+          handed(keep: before + four + ["scannerId"], [.result(scan())]),
+          ["dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true issuingState=CA kind=read licenseNumber=T1234567 postalCode=99999 scannerId=SN-000123 sex=F"])
+    check("and does not reach a page whose endpoint keeps what it kept before", handed(keep: before + four, [.result(scan())]),
+          ["dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true issuingState=CA kind=read licenseNumber=T1234567 postalCode=99999 sex=F"])
+    check("it reaches a page alone when it alone is named", handed(keep: ["scannerId"], [.result(scan())]), ["scannerId=SN-000123"])
+    check("it is the scan's, not the holder's: a scan that read no document says it, and so does a read that failed its validation",
+          handed(keep: ["kind", "issueCode", "scannerId"], [.result(scan(.failedRead, read: false, issues: ["incomplete"])),
+                                                            .result(scan(.failedValidation, issues: ["EXPIRED"])),
+                                                            .result(scan(.failedValidation, read: false, issues: ["NOT_AAMVA"]))]),
+          ["issueCode=incomplete kind=failedRead scannerId=SN-000123", "issueCode=EXPIRED kind=failedValidation scannerId=SN-000123",
+           "issueCode=NOT_AAMVA kind=failedValidation scannerId=SN-000123"])
+    check("a repeat does not say it, and neither does a scan nobody reads",
+          handed(keep: ["kind", "result", "scannerId"], [.duplicate(scan())]) + handed(keep: ["kind", "scannerId"], [.result(scan())], reading: false),
+          ["kind=duplicate result=read", "kind=unread"])
+    check("a scanner that gives no id: no such field, and never an empty one",
+          handed(keep: ["kind", "scannerId"], [.result(scan(by: nil)), .result(scan(by: "")), .result(scan(by: "  \n"))]),
+          ["kind=read", "kind=read", "kind=read"])
+    check("it is said without padding, and one with a mark that is no character inside it, or longer than a word may be, is no field",
+          handed(keep: ["kind", "scannerId"], [.result(scan(by: " SN-000123\r\n")), .result(scan(by: "SN\u{0}123")),
+                                               .result(scan(by: String(repeating: "7", count: 65)))]),
+          ["kind=read scannerId=SN-000123", "kind=read", "kind=read"])
+    check("a result made as a binding copied before this makes it (no id passed) says none",
+          handed(keep: ["kind", "scannerId"], [.result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: []))]), ["kind=failedRead"])
+    check("the state, the battery and a warning do not say it",
+          handed(keep: ["kind", "state", "battery", "warning", "scannerId"], [.battery(40), .warning(.lowBattery), .connection("reconnecting", away: .outOfRange)])
+              .filter { $0.contains("scannerId") }, [])
+}
+
+do {
+    // the stand-in: its made-up scanner has an id, said with every scan
+    // that is not a repeat, so a lane's rehearsal plays it
+    let ids = StandInReader.script().compactMap { event -> String? in
+        switch event {
+        case .result(let result): return result.kind.rawValue + " by " + (result.scannerID ?? "none")
+        case .duplicate(let result): return "a repeat by " + (result.scannerID ?? "none")
+        default: return nil
+        }
+    }
+    check("the stand-in's every scan is by its made-up scanner",
+          ids, ["read by TEST-SCANNER-0001", "a repeat by TEST-SCANNER-0001", "failedRead by TEST-SCANNER-0001", "failedValidation by TEST-SCANNER-0001",
+                "failedValidation by TEST-SCANNER-0001", "failedValidation by TEST-SCANNER-0001"])
+    let reader = StandInReader()
+    NativeLibraries.shared.register(IDScannerAdapter(name: "id-reader", scanner: reader))
+    var got: [String] = []
+    for (id, keep) in [("named", ["kind", "scannerId"]), ("not named", ["kind", "fullName"])] {
+        NativeLibraries.shared.handle(["id": id, "url": "native://id-reader/events", "listen": true, "keep": keep],
+                                      answered: { id, value in got.append(id + ": " + fields(value)) }, failed: { id, error in got.append(id + ": error: " + error) })
+    }
+    NativeLibraries.shared.handle(["id": "r", "url": "native://id-reader/start-reading", "keep": [String]()], answered: { _, _ in }, failed: { _, _ in })
+    reader.press()
+    NativeLibraries.shared.stopAll()
+    check("a press of the stand-in hands its scanner's id to the stream whose endpoint names it, and to no other", last(got, 2).sorted(),
+          ["named: kind=read scannerId=TEST-SCANNER-0001", "not named: fullName=Test Person One kind=read"])
+}
+
+do {
+    // the binding's template, compiled in no target here: its text is held
+    // to the scanner's serial by the package's own name, and to never
+    // passing the phone's own name for the scanner in its place
+    let template = (try? String(contentsOfFile: "Bindings/VendorIDScanner.swift", encoding: .utf8)) ?? ""
+    check("the binding's template passes on the scanner's own serial, by the package's own name",
+          ["scannerID: scan.identity.serial"].filter { !template.contains($0) }, [])
+    check("and never the phone's own name for the scanner in its place",
+          ["scannerID: scan.identity.peripheralId", "?? scan.identity.peripheralId"].filter(template.contains), [])
+}
+
 print("reader: \(passed) passed, \(failed) failed")
 if failed > 0 { exit(1) }

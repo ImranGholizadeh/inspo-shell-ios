@@ -55,7 +55,13 @@ import UIKit
 //                                                                   code without padding;
 //                                                                   the issuing state's or
 //                                                                   province's two letters)
-//     issueCode }                                                  (the first issue, if any)
+//     issueCode,                                                   (the first issue, if any)
+//     scannerId }                                                  (the scanner's own id, as
+//                                                                   its package says it: the
+//                                                                   scanner's serial, when it
+//                                                                   has given one; a scan's,
+//                                                                   whether or not a document
+//                                                                   was read)
 //   { kind: "duplicate", result }      a result the scanner suppressed as a
 //                                      repeat, with only its kind (read, ...)
 //   { kind: "unread" }                 a scan, or its repeat, made while
@@ -881,6 +887,9 @@ final class IDScannerAdapter: NativeLibrary {
             if let state = said(holder.issuingState) { value["issuingState"] = state }
         }
         if let code = result.issueCodes.first { value["issueCode"] = code }
+        // the scanner's own id is the scan's, said whether or not a
+        // document was read, and like a document's word never empty
+        if let scanner = said(result.scannerID) { value["scannerId"] = scanner }
         return value
     }
 }

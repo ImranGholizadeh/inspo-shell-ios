@@ -22,7 +22,9 @@ import UIKit
 // are counted from today, so the ages and expiries never go stale. Each
 // made-up person has a document's own words too (its number, sex, postal
 // code and issuing state), handed to a page only when its endpoint's keep
-// names them, as the scanner's are.
+// names them, as the scanner's are. And the made-up scanner has an id of
+// its own (StandInReader.scannerID), said with every scan that is not a
+// repeat, a read or not, and handed to a page the same way.
 //
 // A first pairing plays as the device's does, with the same button: two
 // made-up scanners are heard a second after it starts, the far one first,
@@ -92,6 +94,9 @@ final class StandInReader: NSObject, BluetoothIDScanner {
     /// The stand-in this build runs, for the links that play its scenes.
     private static weak var built: StandInReader?
 
+    /// The made-up scanner's own id: a serial no scanner has.
+    static let scannerID = "TEST-SCANNER-0001"
+
     /// The events a press plays, in turn: every kind the stream carries,
     /// and a failed validation for each issue the policy checks.
     static func script(today: Date = Date()) -> [ScannerLibraryEvent] {
@@ -114,16 +119,16 @@ final class StandInReader: NSObject, BluetoothIDScanner {
         }
         let over21 = holder("Test Person One", age: 36, expiresIn: 4, number: "TEST0000001", sex: "F", postal: "999990000", state: "CA")
         return [
-            .result(ScannerResult(kind: .read, holder: over21, issueCodes: [])),
-            .duplicate(ScannerResult(kind: .read, holder: over21, issueCodes: [])),
-            .result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"])),
+            .result(ScannerResult(kind: .read, holder: over21, issueCodes: [], scannerID: scannerID)),
+            .duplicate(ScannerResult(kind: .read, holder: over21, issueCodes: [], scannerID: scannerID)),
+            .result(ScannerResult(kind: .failedRead, holder: nil, issueCodes: ["incomplete"], scannerID: scannerID)),
             .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Two", age: 18, expiresIn: 5, number: "TEST0000002", sex: "M",
                                                                              postal: "99998-1234", state: "NY"),
-                                  issueCodes: ["UNDER_MINIMUM_AGE"])),
+                                  issueCodes: ["UNDER_MINIMUM_AGE"], scannerID: scannerID)),
             .result(ScannerResult(kind: .failedValidation, holder: holder("Test Person Three", age: 41, expiresIn: -1, number: "TEST0000003", sex: "X",
                                                                              postal: "99997", state: "TX"),
-                                  issueCodes: ["EXPIRED"])),
-            .result(ScannerResult(kind: .failedValidation, holder: nil, issueCodes: ["NOT_AAMVA"])),
+                                  issueCodes: ["EXPIRED"], scannerID: scannerID)),
+            .result(ScannerResult(kind: .failedValidation, holder: nil, issueCodes: ["NOT_AAMVA"], scannerID: scannerID)),
             .battery(15),
             .connection("reconnecting", away: .outOfRange),
         ]

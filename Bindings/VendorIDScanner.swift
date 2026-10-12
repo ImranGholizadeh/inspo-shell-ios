@@ -15,8 +15,9 @@
 //
 // The binding only translates types: the vendor's events into
 // ScannerLibraryEvent, its scan into ScannerResult (the holder's fields
-// the surface names and the issue codes, nothing else: never the raw scan,
-// and of the document's other elements only the postal code), its async
+// the surface names, the issue codes and the scanner's own serial, nothing
+// else: never the raw scan, and of the document's other elements only the
+// postal code), its async
 // calls into callbacks on the main thread. Every mapping decision is the adapter's:
 // in a first pairing the binding passes on each scanner the package hears
 // and the adapter picks which to connect.
@@ -211,7 +212,11 @@ final class VendorIDScanner: BluetoothIDScanner {
                               licenseNumber: $0.licenseNumber, sex: $0.sex, postalCode: $0.fields["DAK"],
                               issuingState: $0.issuingState)
             },
-            issueCodes: (scan.validation.errors + scan.validation.warnings).map(\.code))
+            issueCodes: (scan.validation.errors + scan.validation.warnings).map(\.code),
+            // the scanner's own serial, which the package reads from the
+            // scanner (nil until the scanner has given it): never the
+            // peripheral's id, which is this phone's own name for the scanner
+            scannerID: scan.identity.serial)
     }
 
     private func run(_ done: @escaping (Error?) -> Void, _ work: @escaping () async throws -> Void) {

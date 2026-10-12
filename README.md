@@ -208,7 +208,7 @@ the same shape.
 | `forget` (call) | forgets the paired scanner the package's status names |
 | `start-pairing` (call, data `{venue, door, doorName}`, each optional) | starts pairing a scanner this phone has never used, and answers at once with `{kind: "pairing", step}`: `looking`, or the step of the pairing that already runs, which goes on. The data is where the scanner is paired; the package keeps it with the pairing, on the phone, beside iOS's id of the phone for the app's maker, which the shell adds |
 | `stop-pairing` (call) | stops the pairing that runs |
-| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read; the document's own words, each when the document says it: `licenseNumber`, `sex` (`M`, `F` or `X`), `postalCode` and `issuingState` (below); and `issueCode`, the first issue); `duplicate` (with `result`, the suppressed result's kind only); `unread` (nothing else: a scan, or its repeat, made while reading is stopped, so the page can say why nothing shows instead of showing nothing; one for each scan while the app is in front, to every open stream; none while the app is behind, and one when it comes to the front if any was made, however many); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode`, said once for each change of mode and to a stream that opens while it stands, or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
+| `events` (stream) | every event flat, with a kind: `read`, `failedRead` or `failedValidation` (with `fullName`, `dateOfBirth`, `expirationDate`, `isOver21`, `isExpired` when read; the document's own words, each when the document says it: `licenseNumber`, `sex` (`M`, `F` or `X`), `postalCode` and `issuingState` (below); `issueCode`, the first issue; and `scannerId`, the scanner's own id, when the scanner has given one (below)); `duplicate` (with `result`, the suppressed result's kind only); `unread` (nothing else: a scan, or its repeat, made while reading is stopped, so the page can say why nothing shows instead of showing nothing; one for each scan while the app is in front, to every open stream; none while the app is behind, and one when it comes to the front if any was made, however many); `state` (`state`; `paired`, 1 or 0, as the state call says it, on every one; and `reason` when the scanner is not connected: a real connection change, at once, and again when only the reason or only `paired` has changed, so a scanner forgotten, just paired, or unpaired outside the app is told without a call; the package's `reading` during each scan is held back and reads as `connected`); `battery` (`battery`, the percent); `warning` (`warning`: `keyboard-mode`, said once for each change of mode and to a stream that opens while it stands, or `low-battery`); `pairing` (`step`: `looking`, `connecting`, `confirm`, `paired` or `failed`, and with `failed` a `reason`) |
 
 The adapter configures the package once, on first use: its age and expiry
 checks on, its duplicate window as delivered, reporting off the phone never
@@ -248,6 +248,33 @@ and still builds: it is copied again to have them. The stand-in's three
 made-up people say all four (`TEST0000001`, `F`, `99999`, `CA`; and so on),
 so a rehearsal plays them. `scripts/check-reader.sh` holds each arriving
 when `keep` names it and not arriving when it does not.
+
+### The scanner's own id
+
+A scan says one field of the scanner that made it, handed to the page only
+when the endpoint document's `keep` names it, exactly as written here:
+
+| `keep` names | What the page is handed |
+|---|---|
+| `scannerId` | the scanner's own id, as its package says it: the serial number the scanner itself gives, the same on every phone it is paired with |
+
+It is the scan's and not the holder's: a `read`, a `failedRead` and a
+`failedValidation` each say it, whether or not a document was read; a
+`duplicate`, an `unread` and every other event do not. It is not the phone's
+own name for the scanner (the peripheral's id, which iOS makes anew on each
+phone and again when a scanner is forgotten and paired again): that id never
+leaves the adapter. A scanner that has given no serial (the package reads
+it from the scanner a moment after it first connects, and keeps it with the
+pairing) gives no field: there is no empty value to read, and a gene's
+reader gives its own fallback. It is said as a document's word is: without
+padding, and one longer than 64 characters or with a mark that is no
+character in it is no field. It says nothing of a person; whether it is
+written is the records' to say in `keep`, as for every field. A customer's
+binding copied from `Bindings/VendorIDScanner.swift` before this field
+passes none on and still builds: it is copied again to have it. The
+stand-in's made-up scanner says `TEST-SCANNER-0001` with each scan, so a
+rehearsal plays it. `scripts/check-reader.sh` holds it arriving when `keep`
+names it and not arriving when it does not.
 
 ### A paired scanner that is not connected: paired, the reason, at once
 

@@ -159,7 +159,8 @@ public enum ScannerLibraryEvent {
 }
 
 /// A scan's result: its kind, the holder's kept fields when the document
-/// was read, and the codes of its issues (errors first, then warnings).
+/// was read, the codes of its issues (errors first, then warnings), and
+/// the scanner that made it.
 public struct ScannerResult {
     public enum Kind: String {
         case read, failedRead, failedValidation
@@ -167,11 +168,18 @@ public struct ScannerResult {
     public var kind: Kind
     public var holder: ScannerHolder?
     public var issueCodes: [String]
+    /// The scanner's own id, as its package says it: the serial number the
+    /// scanner itself gives, the same on every phone it is paired with.
+    /// Never the phone's own name for the scanner (a peripheral's id, which
+    /// iOS makes anew on each phone). Nil when the scanner has given none,
+    /// or the binding does not pass it on. It says nothing of the holder.
+    public var scannerID: String?
 
-    public init(kind: Kind, holder: ScannerHolder?, issueCodes: [String]) {
+    public init(kind: Kind, holder: ScannerHolder?, issueCodes: [String], scannerID: String? = nil) {
         self.kind = kind
         self.holder = holder
         self.issueCodes = issueCodes
+        self.scannerID = scannerID
     }
 }
 
