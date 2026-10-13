@@ -504,3 +504,69 @@ has no light).
 
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
       -project Shell.xcodeproj -scheme Desktop -configuration Debug build
+
+### It opens the workspace (13 October 2026)
+
+Owner, 2026-10-13: "I want to use it from an x code build". With
+`INSPO_DESKTOP_OPENS = workspace` in `Config/Desktop.xcconfig` (as it is set)
+the app opens the editor's workspace on this Mac: several engines started
+together, which a standing start script does and a standing stop script
+ends. The app runs those two as its helper (`Desktop/Workspace.swift`,
+`Desktop/WorkspaceHelper.swift`) and writes none of their words itself; no
+engine is bundled then, and the build needs neither audit-runner nor
+inspo-core-js. Any other word there: what the app did before (above), by the
+words that were there before.
+
+At launch the app makes the launch's folder of logs, runs the start, waits
+for its end and shows `http://127.0.0.1:<port>/` in its window; until then,
+and when a start fails, the window says so in words (a failed start's own
+last lines). At quit it runs the stop. One workspace runs at a time:
+
+- a workspace an earlier launch of the app started and did not stop (the app
+  was killed; Xcode's Stop kills it) is stopped by the stop script at the
+  next launch, its engines' log kept, and the workspace started again;
+- a workspace the app did not start (a start from a terminal) is never
+  stopped by the app on its own: the window says it is open and offers one
+  button, "Stop it and open the editor here", which runs the stop script
+  (which itself says whether what it finds is that workspace's) and then the
+  start; a quit without that leaves it as it is.
+
+The words, each in `Config/Desktop.xcconfig`; each may also be said in the
+environment of a launch by its own name, which is how a rehearsal runs on
+another port and state:
+
+| word | what it is |
+| --- | --- |
+| `INSPO_DESKTOP_OPENS` | `workspace`, or any other word for what the app did before |
+| `INSPO_DESKTOP_EDITOR_LOCAL` | the tool that starts and stops the workspace (used by the words below) |
+| `INSPO_DESKTOP_WORKSPACE_START`, `INSPO_DESKTOP_WORKSPACE_STOP` | the two scripts |
+| `INSPO_DESKTOP_WORKSPACE_PORT`, `INSPO_DESKTOP_WORKSPACE_THING` | the port that answers on 127.0.0.1, and the start's own name for its state |
+| `INSPO_DESKTOP_WORKSPACE_ACCOUNTS` | the accounts file of the pad's one made-up person (the app refuses to start when it is named and not there); empty: the start's own sign-in |
+| `INSPO_DESKTOP_PAD` | where the pad's genes' homes are (used by the next word) |
+| `INSPO_DESKTOP_WORKSPACE_WORDS` | what is said after the start's name: the gene homes it serves |
+| `INSPO_DESKTOP_WORKSPACE_SAID` | what both scripts are told in their environment, as `NAME=value` pairs |
+| `INSPO_DESKTOP_WORKSPACE_PID`, `INSPO_DESKTOP_WORKSPACE_LOG` | the file the start keeps the workspace's pid in, and the engines' log it writes |
+| `INSPO_DESKTOP_LOGS` | where each launch's folder of logs is made |
+| `INSPO_DESKTOP_SHOWN_AGAIN` | a way round, not a mend: two numbers, the seconds after each load of the page at which the web view is taken out of sight, and for how many seconds (the window says "Opening…"); empty: never |
+| `INSPO_DESKTOP_WINDOW` | the window's first size in points, width then height |
+
+A launch's logs are in `<INSPO_DESKTOP_LOGS>/launch-<year>-<month>-<day>-<hour><minute><second>/`
+(a second launch in the same second gets `-2`), never written over by the
+next: `app.log` (what the app did), `start.log` and `stop.log` (the two
+scripts' own words), `engines.log` (every engine's log, followed as it
+grows, so it is whole when the app is killed), `page.log` (what the page
+says to its console, an error nobody caught, a promise nobody answered, and
+each load of the page), and after a launch that found a workspace up,
+`stop-of-what-stood.log` and `engines-of-what-stood.log`. The page's log
+listens to no field and no key. The menu's "Show This Launch's Logs" (under
+the app's name) shows the folder; "Reload Page" (View, ⌘R) loads the page
+again.
+
+`Desktop/Rehearsal.swift` is in a Debug build alone and does nothing unless
+the environment's `INSPO_DESKTOP_REHEARSAL` names a folder: a proof on this
+Mac then plays the app through steps written into that folder (a press and
+a typed letter as AppKit's own events, the app's own pictures of its page),
+behind the other windows. `scripts/check-desktop.sh` holds the words, the
+launch's folder, what a launch does with a workspace that is up, a failed
+start, the followed log and what the page's log keeps, with stand-in
+scripts and no engine.

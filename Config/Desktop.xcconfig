@@ -2,6 +2,51 @@
 // renderer it serves are built from their own repositories at these paths;
 // it reads INSPO_DESKTOP_READ in INSPO_DESKTOP_PROJECT with the person's own
 // gcloud sign-in, and opens the page Config/desktop-pages/<INSPO_DESKTOP_PAGE>.json.
+//
+// WHAT THE APP OPENS (owner, 13 October 2026: "I want to use it from an x code
+// build"; the app opens tonight's editor on this Mac). INSPO_DESKTOP_OPENS =
+// workspace: the editor's workspace, several engines started together by the
+// standing start script and ended by the standing stop script, which the app
+// runs as its helper; nothing is bundled (scripts/bundle-engine.sh leaves the
+// app's own engine out). Any other word: what the app did before, the one
+// engine it bundles, by the words further down. Every word below may also be
+// said in the environment of a launch by its own name (a rehearsal on another
+// port and state); a value here holds no space but between its words.
+INSPO_DESKTOP_OPENS = workspace
+// the tool that starts and stops the workspace, and where it keeps a start's state
+INSPO_DESKTOP_EDITOR_LOCAL = $(HOME)/Desktop/claude/inspo-context/tools/editor-local
+INSPO_DESKTOP_WORKSPACE_START = $(INSPO_DESKTOP_EDITOR_LOCAL)/open-editor.sh
+INSPO_DESKTOP_WORKSPACE_STOP = $(INSPO_DESKTOP_EDITOR_LOCAL)/stop-workspace.sh
+// the port that answers on 127.0.0.1 (the engines take the ports after it), and the start's own name for its state
+INSPO_DESKTOP_WORKSPACE_PORT = 6951
+INSPO_DESKTOP_WORKSPACE_THING = workspace
+// the pad's person: an accounts file of ONE made-up person (email, word, key), on this Mac alone, never the rig's
+// word. Empty: the start's own sign-in.
+INSPO_DESKTOP_WORKSPACE_ACCOUNTS = $(HOME)/.inspo-pad-account.json
+// the pad: where its genes' homes are
+INSPO_DESKTOP_PAD = $(HOME)/Desktop/claude/inspo-context/scratch-pad
+// what is said after the start's name: the genes it serves, each by its home, a space between two (and the start's
+// own last word, if any). The pad's person sees the genes made for that person; a gene of another person's is
+// served and not listed for them.
+INSPO_DESKTOP_WORKSPACE_WORDS = $(INSPO_DESKTOP_PAD)/genes/shapes
+// what both scripts are told in their environment, in their own words
+INSPO_DESKTOP_WORKSPACE_SAID = EDITOR_LOCAL_WORKSPACE_PORT=$(INSPO_DESKTOP_WORKSPACE_PORT) EDITOR_LOCAL_WORKSPACE_THING=$(INSPO_DESKTOP_WORKSPACE_THING) EDITOR_LOCAL_ACCOUNTS=$(INSPO_DESKTOP_WORKSPACE_ACCOUNTS)
+// the file the start keeps the workspace's pid in, and the engines' log it writes
+INSPO_DESKTOP_WORKSPACE_PID = $(INSPO_DESKTOP_EDITOR_LOCAL)/state/$(INSPO_DESKTOP_WORKSPACE_THING)/pid
+INSPO_DESKTOP_WORKSPACE_LOG = $(INSPO_DESKTOP_EDITOR_LOCAL)/state/$(INSPO_DESKTOP_WORKSPACE_THING)/serve.log
+// where each launch's folder of logs is made: <here>/launch-<year>-<month>-<day>-<hour><minute><second>
+INSPO_DESKTOP_LOGS = $(HOME)/Library/Logs/Inspo
+// A WAY ROUND, NOT A MEND (13 October 2026): the editor's opening does not bring its sign-in in on an arrival that is
+// visible from its start (the first frame stays for good), and does once the page has been out of sight for some
+// seconds and is shown again. Two numbers: how many seconds after each load of the page the app takes its web view
+// out of sight, and for how many seconds (the window says "Opening…" meanwhile, and app.log says each time it is
+// done). Measured on this Mac: out of sight from the load for 7 s is too short, for 9 s is enough. Empty: never
+// (take it out when the editor's opening is mended).
+INSPO_DESKTOP_SHOWN_AGAIN = 0 12
+// the window's first size, in points: width, then height (the system keeps the size you then give it)
+INSPO_DESKTOP_WINDOW = 1440 900
+//
+// WHAT THE APP DID BEFORE (INSPO_DESKTOP_OPENS = bundled-engine):
 INSPO_DESKTOP_PROJECT = inspo-core
 INSPO_DESKTOP_READ = dumps
 INSPO_DESKTOP_PAGE = editor

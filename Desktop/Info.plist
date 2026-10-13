@@ -14,6 +14,30 @@
 	<string>$(INSPO_DESKTOP_DEV_STATES)</string>
 	<key>InspoDevAccounts</key>
 	<string>$(INSPO_DESKTOP_DEV_ACCOUNTS)</string>
+	<key>InspoOpens</key>
+	<string>$(INSPO_DESKTOP_OPENS)</string>
+	<key>InspoWorkspaceStart</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_START)</string>
+	<key>InspoWorkspaceStop</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_STOP)</string>
+	<key>InspoWorkspaceWords</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_WORDS)</string>
+	<key>InspoWorkspaceSaid</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_SAID)</string>
+	<key>InspoWorkspacePort</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_PORT)</string>
+	<key>InspoWorkspacePid</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_PID)</string>
+	<key>InspoWorkspaceLog</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_LOG)</string>
+	<key>InspoWorkspaceAccounts</key>
+	<string>$(INSPO_DESKTOP_WORKSPACE_ACCOUNTS)</string>
+	<key>InspoLogs</key>
+	<string>$(INSPO_DESKTOP_LOGS)</string>
+	<key>InspoShownAgain</key>
+	<string>$(INSPO_DESKTOP_SHOWN_AGAIN)</string>
+	<key>InspoWindow</key>
+	<string>$(INSPO_DESKTOP_WINDOW)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
