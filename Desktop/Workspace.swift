@@ -152,7 +152,9 @@ final class WorkspaceRun {
         follower.begin()
         self.follower = follower
         let code = Self.run(words.start, words.words, words.environment(base), into: folder + "/start.log")
-        if code == 0, let pid = livePid() {
+        // Nothing stood before this start, so a pid alive now is its own, also
+        // when the start ended unanswered: the quit must stop it too.
+        if let pid = livePid() {
             startedHere = true
             let said: [String: Any] = ["pid": Int(pid), "launch": folder, "port": words.port]
             try? JSONSerialization.data(withJSONObject: said).write(to: URL(fileURLWithPath: note))
