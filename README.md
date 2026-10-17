@@ -547,7 +547,7 @@ another port and state:
 | `INSPO_DESKTOP_WORKSPACE_SAID` | what both scripts are told in their environment, as `NAME=value` pairs |
 | `INSPO_DESKTOP_WORKSPACE_PID`, `INSPO_DESKTOP_WORKSPACE_LOG` | the file the start keeps the workspace's pid in, and the engines' log it writes |
 | `INSPO_DESKTOP_LOGS` | where each launch's folder of logs is made |
-| `INSPO_DESKTOP_SHOWN_AGAIN` | a way round, not a mend: two numbers, the seconds after each load of the page at which the web view is taken out of sight, and for how many seconds (the window says "Opening…"); empty: never |
+| `INSPO_DESKTOP_SHOWN_AGAIN` | a way round, not a mend, no longer needed (empty, as set): two numbers, the seconds after each load of the page at which the web view is taken out of sight, and for how many seconds (the window says "Opening…"); empty: never. It was for the editor's opening that did not bring its sign-in in on a visible arrival, mended in the editor gene's own records (the folder build-prompt-r1-tune9-w15d-spread) |
 | `INSPO_DESKTOP_WINDOW` | the window's first size in points, width then height |
 
 A launch's logs are in `<INSPO_DESKTOP_LOGS>/launch-<year>-<month>-<day>-<hour><minute><second>/`

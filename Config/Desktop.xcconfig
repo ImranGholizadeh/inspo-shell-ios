@@ -36,13 +36,14 @@ INSPO_DESKTOP_WORKSPACE_PID = $(INSPO_DESKTOP_EDITOR_LOCAL)/state/$(INSPO_DESKTO
 INSPO_DESKTOP_WORKSPACE_LOG = $(INSPO_DESKTOP_EDITOR_LOCAL)/state/$(INSPO_DESKTOP_WORKSPACE_THING)/serve.log
 // where each launch's folder of logs is made: <here>/launch-<year>-<month>-<day>-<hour><minute><second>
 INSPO_DESKTOP_LOGS = $(HOME)/Library/Logs/Inspo
-// A WAY ROUND, NOT A MEND (13 October 2026): the editor's opening does not bring its sign-in in on an arrival that is
-// visible from its start (the first frame stays for good), and does once the page has been out of sight for some
-// seconds and is shown again. Two numbers: how many seconds after each load of the page the app takes its web view
-// out of sight, and for how many seconds (the window says "Opening…" meanwhile, and app.log says each time it is
-// done). Measured on this Mac: out of sight from the load for 7 s is too short, for 9 s is enough. Empty: never
-// (take it out when the editor's opening is mended).
-INSPO_DESKTOP_SHOWN_AGAIN = 0 12
+// A WAY ROUND, NOT A MEND (13 October 2026), NO LONGER NEEDED (17 October 2026): the editor's opening did not bring its
+// sign-in in on an arrival visible from its start, and did once the page had been out of sight for some seconds and
+// was shown again. The cause was the editor gene's own records (its steps after w11c were made from w11c, not from
+// its folder mended for "a mutation spreads"); the folder build-prompt-r1-tune9-w15d-spread brings the sign-in in on
+// every arrival. Two numbers: how many seconds after each load of the page the app takes its web view out of sight,
+// and for how many seconds (the window says "Opening…" meanwhile, and app.log says each time it is done). Empty:
+// never, as now. Two numbers again only for a start whose folder is from before w15d-spread.
+INSPO_DESKTOP_SHOWN_AGAIN =
 // the window's first size, in points: width, then height (the system keeps the size you then give it)
 INSPO_DESKTOP_WINDOW = 1440 900
 //
