@@ -257,8 +257,8 @@ enum FirstFrame {
             webView.evaluateJavaScript(rootDrawn) { value, error in
                 let drawn = (value as? NSNumber)?.intValue ?? 0
                 if asked <= 3 || asked % 50 == 0 { WorkspaceHelper.shared.say("the page's first frame asked (\(asked)): \(drawn) drawn\(error.map { ", " + $0.localizedDescription } ?? "")") }
-                if drawn > 0 {
-                    show(because: "the page drew its first frame (its root and \(drawn - 1) molecules in it)")
+                if drawn > 1 {
+                    show(because: "the page drew its first frame (its root and \(drawn - 1) things drawn in it)")
                 } else if !shown {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: ask)
                 }
