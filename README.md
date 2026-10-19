@@ -550,14 +550,15 @@ another port and state:
 | `INSPO_DESKTOP_SHOWN_AGAIN` | a way round, not a mend, no longer needed (empty, as set): two numbers, the seconds after each load of the page at which the web view is taken out of sight, and for how many seconds (the window says "Opening…"); empty: never. It was for the editor's opening that did not bring its sign-in in on a visible arrival, mended in the editor gene's own records (the folder build-prompt-r1-tune9-w15d-spread) |
 | `INSPO_DESKTOP_WINDOW` | the window's first size in points, width then height |
 
-While the app opens the workspace its window is kept out of sight and is
-shown at once when the page has drawn its root (the one its instance names):
-the opening is moving as the window appears, with no words before it (the
-owner, 19 October 2026: "you should feel no step before the animation
-start"). The web view is told to draw while out of sight (WebKit's own
-switch, the one the rehearsal's door uses; a WebKit without it shows the
-window at once). The window is shown too when it has words to say (a start
-that failed, a workspace already open) and, whatever happens, 8 s after the
+While the app opens the workspace its window says no words: it stands in
+the editor's own ground, and an opaque cover of that ground lies over the
+web view, taking no press and no key, until the page has drawn its root
+with something in it (the owner, 19 October 2026: "you should feel no step
+before the animation start"). The window is visible all along, so WebKit
+draws the page under the cover as it draws any page seen: no private
+WebKit call ships (the rehearsal's door alone, in a Debug build, keeps
+one). The cover goes too when the window has words to say (a start that
+failed, a workspace already open) and, whatever happens, 8 s after the
 launch. `app.log` says each moment in milliseconds after the launch.
 
 A launch's logs are in `<INSPO_DESKTOP_LOGS>/launch-<year>-<month>-<day>-<hour><minute><second>/`

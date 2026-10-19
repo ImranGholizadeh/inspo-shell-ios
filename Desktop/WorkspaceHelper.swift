@@ -14,7 +14,7 @@ final class WorkspaceHelper: ObservableObject {
     static let shared = WorkspaceHelper()
 
     @Published private(set) var pageURL: URL?
-    @Published private(set) var status = "Opening the workspace…"
+    @Published private(set) var status = "" // (no words while it opens: the ground alone; words where it cannot)
     /// A workspace is up that this app did not start: the window offers to stop it.
     @Published private(set) var offersToStop = false
 
@@ -84,7 +84,6 @@ final class WorkspaceHelper: ObservableObject {
 
     private func start() {
         guard let run else { return }
-        status = "Starting the workspace (its engines take a few seconds)…"
         say("the start begins")
         Task.detached {
             let code = run.start()

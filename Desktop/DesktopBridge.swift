@@ -147,6 +147,8 @@ struct DesktopView: NSViewRepresentable {
             view.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(view)
         }
+        // (the page under an opaque cover of the editor's ground until its first frame: FirstFrame)
+        if DesktopApp.opensWorkspace { FirstFrame.covers(web, in: container) }
         NSLayoutConstraint.activate([
             web.topAnchor.constraint(equalTo: container.topAnchor),
             web.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -179,16 +181,18 @@ final class TitleBarDragView: NSView {
     }
 }
 
-/// The window's first showing (owner, 19 October 2026: "The workspace needs
+/// The window's first frame (owner, 19 October 2026: "The workspace needs
 /// to start fast..optimistically.. you should feel no step before the
-/// animation start"). While the app opens the workspace its window is kept
-/// out of sight (the Dock's own mark says the app is opening), and is shown
-/// at once when the page has drawn its first frame: the opening is moving
-/// as the window appears, with no words and no empty ground before it. It
-/// is shown too when the window has words to say (a start that failed, a
-/// workspace already open) and, whatever happens, 8 s after the launch.
-/// Each moment is said in the launch's app.log, in milliseconds after the
-/// launch.
+/// animation start"). While the app opens the workspace no words are
+/// shown: the window stands in the editor's own ground, and over the web
+/// view lies an opaque cover of that ground, which takes no press and no
+/// key, until the page has drawn its first frame (its root and something
+/// in it); the cover then goes and the page, already moving, is there. The
+/// window is visible all along, so WebKit draws the page under the cover
+/// as it draws any page seen (no private switch). The cover goes too when
+/// the window has words to say (a start that failed, a workspace already
+/// open) and, whatever happens, 8 s after the launch. Each moment is said
+/// in the launch's app.log, in milliseconds after the launch.
 @MainActor
 enum FirstFrame {
     /// when the system started this process (its own clock: a Swift
@@ -203,38 +207,46 @@ enum FirstFrame {
     }()
     private static var shown = false
     private static var watching = false
-    private static var whenShown: (() -> Void)?
+    private static weak var cover: NSView?
+    private static weak var page: WKWebView?
 
     static func sinceLaunch() -> Int { Int(Date().timeIntervalSince(launched) * 1000) }
 
-    static func keepWindowUntilDrawn() {
-        guard !shown else { return }
-        NSApp.windows.forEach { $0.alphaValue = 0 }
-        WorkspaceHelper.shared.say("the window is kept out of sight until the page has drawn, \(sinceLaunch()) ms after the launch")
+    /// the editor's ground, as the window's words stand on it
+    static let ground = NSColor(calibratedHue: 214 / 360, saturation: 0.33, brightness: 0.12, alpha: 1)
+
+    static func began() {
+        WorkspaceHelper.shared.say("the window stands in its ground with no words until the page has drawn, \(sinceLaunch()) ms after the launch")
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { show(because: "nothing was drawn in 8 s") }
+    }
+
+    /// The cover laid over a web view while the page has not drawn: one a
+    /// shown window no longer needs is not laid.
+    static func covers(_ web: WKWebView, in container: NSView) {
+        page = web
+        guard !shown else { return }
+        let view = FirstFrameCover()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(view, positioned: .above, relativeTo: web)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        cover = view
+        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
     }
 
     static func show(because why: String) {
         guard !shown else { return }
         shown = true
-        NSApp.windows.forEach { $0.alphaValue = 1 }
-        whenShown?(); whenShown = nil
-        WorkspaceHelper.shared.say("the window is shown, \(sinceLaunch()) ms after the launch: \(why)")
-    }
-
-    /// The page's first frame: its root drawn (rootDrawn), asked every
-    /// 30 ms once the page has loaded. The page is only looked at; nothing of it is changed.
-    /// WebKit takes a window out of sight for a hidden page, which draws
-    /// nothing: while the window is kept out of sight the web view is told
-    /// to draw as if it were seen (WebKit's own switch, the one the
-    /// rehearsal's door uses; a WebKit without it is shown at once), and
-    /// told to look again once it is shown.
-    static func drawsUnseen(_ webView: WKWebView, _ unseen: Bool) -> Bool {
-        let off = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
-        guard webView.responds(to: off) else { return false }
-        typealias Set = @convention(c) (AnyObject, Selector, Bool) -> Void
-        unsafeBitCast(webView.method(for: off), to: Set.self)(webView, off, !unseen)
-        return true
+        if let cover {
+            let window = cover.window
+            cover.removeFromSuperview()
+            if let page { window?.makeFirstResponder(page) }
+        }
+        WorkspaceHelper.shared.say("the page is shown, \(sinceLaunch()) ms after the launch: \(why)")
     }
 
     /// how many elements the page drew of its root and in it: the root is
@@ -242,14 +254,12 @@ enum FirstFrame {
     /// its locus; none drawn yet: 0
     static let rootDrawn = "(()=>{try{const i=JSON.parse(document.getElementById('inspo-instance').textContent);const r=document.getElementById(i.root);return r?1+r.querySelectorAll('*').length:0}catch(e){return 0}})()"
 
+    /// The page's first frame: its root drawn with something in it
+    /// (rootDrawn), asked every 30 ms once the page has loaded. The page is
+    /// only looked at; nothing of it is changed.
     static func watch(_ webView: WKWebView) {
         guard !shown, !watching else { return }
         watching = true
-        guard drawsUnseen(webView, true) else {
-            show(because: "this WebKit draws no page out of sight")
-            return
-        }
-        whenShown = { _ = drawsUnseen(webView, false) }
         WorkspaceHelper.shared.say("the page loaded, \(sinceLaunch()) ms after the launch")
         var asked = 0
         func ask() {
@@ -266,4 +276,24 @@ enum FirstFrame {
         }
         ask()
     }
+}
+
+/// The cover over the page until its first frame: the editor's ground,
+/// opaque; it takes every press and every key, so nothing reaches a page a
+/// person cannot see yet.
+final class FirstFrameCover: NSView {
+    override var isOpaque: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        FirstFrame.ground.setFill()
+        dirtyRect.fill()
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
+    override func keyDown(with event: NSEvent) {}
+    override func keyUp(with event: NSEvent) {}
+    override func performKeyEquivalent(with event: NSEvent) -> Bool { false }
 }

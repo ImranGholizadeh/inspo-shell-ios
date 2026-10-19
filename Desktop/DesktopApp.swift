@@ -38,7 +38,7 @@ struct DesktopApp: App {
                     // (under it, the words a person reads while the page
                     // is kept from sight: INSPO_DESKTOP_SHOWN_AGAIN)
                     ZStack {
-                        if Self.opensWorkspace { EngineStatusView(status: "Opening…") }
+                        if Self.opensWorkspace { EngineStatusView(status: "") } // (the ground alone: no words before the opening)
                         DesktopView(url: url).ignoresSafeArea()
                     }
                 } else if Self.opensWorkspace {
@@ -50,7 +50,7 @@ struct DesktopApp: App {
             }
             .frame(minWidth: 960, minHeight: 600)
             .task {
-                if Self.opensWorkspace { workspace.open(); FirstFrame.keepWindowUntilDrawn() } else { engine.start() }
+                if Self.opensWorkspace { workspace.open(); FirstFrame.began() } else { engine.start() }
                 #if DEBUG
                 Rehearsal.shared.begin()
                 #endif
