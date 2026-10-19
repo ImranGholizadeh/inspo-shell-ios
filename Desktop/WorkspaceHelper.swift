@@ -89,7 +89,7 @@ final class WorkspaceHelper: ObservableObject {
         Task.detached {
             let code = run.start()
             await MainActor.run {
-                self.say("the start ended with \(code)")
+                self.say("the start ended with \(code), \(FirstFrame.sinceLaunch()) ms after the launch")
                 if code == 0, let url = URL(string: run.words.address) {
                     self.pageURL = url
                 } else {
@@ -122,6 +122,7 @@ final class WorkspaceHelper: ObservableObject {
     func say(_ line: String) { app?.line(line) }
 
     private func show(_ words: String) {
+        FirstFrame.show(because: "the window has words to say")
         pageURL = nil
         status = words
         say("the window says: \(words)")

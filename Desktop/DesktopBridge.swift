@@ -104,6 +104,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegat
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         WorkspaceHelper.shared.page?.line("the page loaded: \(webView.url?.absoluteString ?? "")")
+        if DesktopApp.opensWorkspace { FirstFrame.watch(webView) }
         // A WAY ROUND, NOT A MEND (13 October 2026): the editor's opening
         // does not bring its sign-in in on an arrival that is visible from
         // its start, and does once the page has been out of sight for some
@@ -175,5 +176,94 @@ final class TitleBarDragView: NSView {
         case "None": break
         default: window?.performZoom(nil)
         }
+    }
+}
+
+/// The window's first showing (owner, 19 October 2026: "The workspace needs
+/// to start fast..optimistically.. you should feel no step before the
+/// animation start"). While the app opens the workspace its window is kept
+/// out of sight (the Dock's own mark says the app is opening), and is shown
+/// at once when the page has drawn its first frame: the opening is moving
+/// as the window appears, with no words and no empty ground before it. It
+/// is shown too when the window has words to say (a start that failed, a
+/// workspace already open) and, whatever happens, 8 s after the launch.
+/// Each moment is said in the launch's app.log, in milliseconds after the
+/// launch.
+@MainActor
+enum FirstFrame {
+    /// when the system started this process (its own clock: a Swift
+    /// static is made only when first asked for)
+    static let launched: Date = {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&name, 4, &info, &size, nil, 0) == 0 else { return Date() }
+        let t = info.kp_proc.p_starttime
+        return Date(timeIntervalSince1970: Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000)
+    }()
+    private static var shown = false
+    private static var watching = false
+    private static var whenShown: (() -> Void)?
+
+    static func sinceLaunch() -> Int { Int(Date().timeIntervalSince(launched) * 1000) }
+
+    static func keepWindowUntilDrawn() {
+        guard !shown else { return }
+        NSApp.windows.forEach { $0.alphaValue = 0 }
+        WorkspaceHelper.shared.say("the window is kept out of sight until the page has drawn, \(sinceLaunch()) ms after the launch")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { show(because: "nothing was drawn in 8 s") }
+    }
+
+    static func show(because why: String) {
+        guard !shown else { return }
+        shown = true
+        NSApp.windows.forEach { $0.alphaValue = 1 }
+        whenShown?(); whenShown = nil
+        WorkspaceHelper.shared.say("the window is shown, \(sinceLaunch()) ms after the launch: \(why)")
+    }
+
+    /// The page's first frame: its root drawn (rootDrawn), asked every
+    /// 30 ms once the page has loaded. The page is only looked at; nothing of it is changed.
+    /// WebKit takes a window out of sight for a hidden page, which draws
+    /// nothing: while the window is kept out of sight the web view is told
+    /// to draw as if it were seen (WebKit's own switch, the one the
+    /// rehearsal's door uses; a WebKit without it is shown at once), and
+    /// told to look again once it is shown.
+    static func drawsUnseen(_ webView: WKWebView, _ unseen: Bool) -> Bool {
+        let off = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+        guard webView.responds(to: off) else { return false }
+        typealias Set = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(webView.method(for: off), to: Set.self)(webView, off, !unseen)
+        return true
+    }
+
+    /// how many elements the page drew of its root and in it: the root is
+    /// the one its instance names (<script id="inspo-instance">), drawn by
+    /// its locus; none drawn yet: 0
+    static let rootDrawn = "(()=>{try{const i=JSON.parse(document.getElementById('inspo-instance').textContent);const r=document.getElementById(i.root);return r?1+r.querySelectorAll('*').length:0}catch(e){return 0}})()"
+
+    static func watch(_ webView: WKWebView) {
+        guard !shown, !watching else { return }
+        watching = true
+        guard drawsUnseen(webView, true) else {
+            show(because: "this WebKit draws no page out of sight")
+            return
+        }
+        whenShown = { _ = drawsUnseen(webView, false) }
+        WorkspaceHelper.shared.say("the page loaded, \(sinceLaunch()) ms after the launch")
+        var asked = 0
+        func ask() {
+            asked += 1
+            webView.evaluateJavaScript(rootDrawn) { value, error in
+                let drawn = (value as? NSNumber)?.intValue ?? 0
+                if asked <= 3 || asked % 50 == 0 { WorkspaceHelper.shared.say("the page's first frame asked (\(asked)): \(drawn) drawn\(error.map { ", " + $0.localizedDescription } ?? "")") }
+                if drawn > 0 {
+                    show(because: "the page drew its first frame (its root and \(drawn - 1) molecules in it)")
+                } else if !shown {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: ask)
+                }
+            }
+        }
+        ask()
     }
 }

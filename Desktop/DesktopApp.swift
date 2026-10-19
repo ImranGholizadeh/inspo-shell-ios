@@ -50,7 +50,7 @@ struct DesktopApp: App {
             }
             .frame(minWidth: 960, minHeight: 600)
             .task {
-                if Self.opensWorkspace { workspace.open() } else { engine.start() }
+                if Self.opensWorkspace { workspace.open(); FirstFrame.keepWindowUntilDrawn() } else { engine.start() }
                 #if DEBUG
                 Rehearsal.shared.begin()
                 #endif
