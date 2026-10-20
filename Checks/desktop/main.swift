@@ -189,5 +189,42 @@ js.evaluateScript(PageLog.script)
 js.evaluateScript(#"console.log("once")"#)
 check("set twice, it says a line once", said.count == 5, said.count)
 
+// the desktop bridge answers one page alone, the one the app opens, as the
+// phone's does (Shell/OwnPage.swift): a link or a redirect out of the
+// staging place puts another site's page in the app with the bridge in it
+do {
+    let door = PageDoor(own: PageOrigin(URL(string: "https://staging.example/editor")))
+    let ownFrame = PageOrigin(scheme: "https", host: "staging.example", port: 0)
+    let other = PageOrigin(URL(string: "https://elsewhere.example/"))
+    let said: [String: Any] = ["level": "log", "text": "drawn"]
+    check("a console line of the site the app opens is kept, its own frames' too", PageLog.line(said, from: ownFrame, door: door) == "log: drawn")
+    check("another site's console line is kept nowhere", PageLog.line(said, from: other, door: door) == nil)
+    check("a page of no origin has nothing kept", PageLog.line(said, from: nil, door: door) == nil)
+    check("an app that opens no page keeps no page's line", PageLog.line(said, from: ownFrame, door: PageDoor(own: nil)) == nil)
+
+    let bridge = read("Desktop/DesktopBridge.swift")
+    let lines = bridge.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+    let at = lines.firstIndex { $0.hasPrefix("func userContentController(") } ?? -1
+    let first = at < 0 ? "" : lines[(at + 1)...].first { !$0.isEmpty && !$0.hasPrefix("//") } ?? ""
+    check("the bridge is read", at >= 0)
+    check("the first thing the bridge does with a page's message is read the origin of the frame that sent it", first == "let asker = Self.origin(of: message.frameInfo)", first)
+    check("the door's own page is the page the app opens", bridge.contains("door = PageDoor(own: PageOrigin(url))"))
+    let reads = lines.filter { $0.contains("message.body") }
+    check("a message's body is read in two places alone: a console line through the door's site, a request through the door from the main frame",
+          reads == ["if let line = PageLog.line(message.body, from: asker, door: door) { WorkspaceHelper.shared.page?.line(line) }",
+                    "guard let body = door.take(message.body, from: asker, mainFrame: message.frameInfo.isMainFrame),"], reads)
+    check("what the bridge tells a page is told only while the page held is the one the app opens, and an answer only to the page that asked",
+          ["guard waiting.isFor(page) else { return }", "guard loaded, let webView, door.isOwn(waiting.held) else {", "if door.isOwn(waiting.held) {",
+           "answered: { [weak self] id, value in self?.call(\"nativeAnswered\", for: page, id, value) },",
+           "failed: { [weak self] id, error in self?.call(\"nativeFailed\", for: page, id, error) })"].allSatisfy { bridge.contains($0) })
+    let runs = lines.filter { $0.contains("evaluateJavaScript(") }.sorted()
+    check("the bridge runs its words for a page in one place alone, behind those guards; the one other thing it runs is the first frame's read, which changes nothing",
+          runs == ["waiting.take().forEach { webView.evaluateJavaScript($0) }", "webView.evaluateJavaScript(js)", "webView.evaluateJavaScript(rootDrawn) { value, error in"].sorted(), runs)
+    check("the page held is the one whose first bytes last came in, and none once its process ended",
+          bridge.components(separatedBy: "waiting.pageChanged(").count - 1 == 2
+          && bridge.contains("func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {\n        waiting.pageChanged(to: PageOrigin(webView.url))\n    }")
+          && bridge.contains("waiting.pageChanged(to: nil)"))
+}
+
 print("desktop: \(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

@@ -11,20 +11,32 @@ import WebKit
 // NativeLibrary.swift, shared with the iOS shell), and the shell answers
 // through window.inspo, or window.inspoWaiting before the page is ready.
 // It says what it does in window.inspoShell.acts (ShellActs.swift).
+//
+// It answers one page alone, the one the app opens, through the phone's
+// door (Shell/OwnPage.swift): a link or a redirect out of that site puts
+// another site's page in the app with the bridge in it, and that page is
+// answered nothing and has nothing of its kept. A request is taken only
+// from the main frame of a page of the opened address's origin; a console
+// line from any frame of that origin; what the bridge tells a page is told
+// only while the page held (its first bytes last came in) is of that
+// origin, and an answer only to the page that asked.
 final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     static let shared = DesktopBridge()
     /// The height of the title bar the page runs under
     static let titleBarHeight = NSWindow.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled]).height - 100
     private(set) weak var webView: WKWebView?
-    private var pending: [String] = []
+    private var waiting = PageWaiting()
+    private var door = PageDoor(own: nil)
     private var loaded = false
 
     func makeWebView(url: URL) -> WKWebView {
+        door = PageDoor(own: PageOrigin(url))
         let config = WKWebViewConfiguration()
         config.applicationNameForUserAgent = "InspoDesktop/1"
         config.userContentController.add(self, name: "inspo")
         // what the page says to its console, and an error nobody caught, are
-        // kept in the launch's folder (PageLog.swift): no field is listened to
+        // kept in the launch's folder (PageLog.swift): no field is listened
+        // to, and only a page of the opened address's site is heard
         config.userContentController.add(self, name: PageLog.handler)
         config.userContentController.addUserScript(WKUserScript(
             source: PageLog.script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -52,31 +64,44 @@ final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegat
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        let asker = Self.origin(of: message.frameInfo)
         if message.name == PageLog.handler {
-            if let line = PageLog.line(message.body) { WorkspaceHelper.shared.page?.line(line) }
+            if let line = PageLog.line(message.body, from: asker, door: door) { WorkspaceHelper.shared.page?.line(line) }
             return
         }
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        // a page that is not the one the app opens, or a frame inside it, is
+        // answered nothing, and told nothing of its being refused
+        guard let body = door.take(message.body, from: asker, mainFrame: message.frameInfo.isMainFrame),
+              let type = body["type"] as? String else { return }
+        // an answer is the page's that asked: told to no page that takes its place
+        let page = waiting.page
         switch type {
         case "haptic":
             // a Mac feels only the trackpad's taps: every pattern is one
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
         case "native":
             NativeLibraries.shared.handle(body,
-                answered: { [weak self] id, value in self?.call("nativeAnswered", id, value) },
-                failed: { [weak self] id, error in self?.call("nativeFailed", id, error) })
+                answered: { [weak self] id, value in self?.call("nativeAnswered", for: page, id, value) },
+                failed: { [weak self] id, error in self?.call("nativeFailed", for: page, id, error) })
         default:
             break
         }
     }
 
-    private func call(_ hook: String, _ values: Any...) {
+    /// A frame's origin, as the web view says it.
+    static func origin(of frame: WKFrameInfo) -> PageOrigin {
+        let origin = frame.securityOrigin
+        return PageOrigin(scheme: origin.protocol, host: origin.host, port: origin.port)
+    }
+
+    private func call(_ hook: String, for page: Int? = nil, _ values: Any...) {
+        guard waiting.isFor(page) else { return }
         guard JSONSerialization.isValidJSONObject(values),
               let data = try? JSONSerialization.data(withJSONObject: values),
               let args = String(data: data, encoding: .utf8) else { return }
         let js = "(function(h,a){var i=window.inspo;if(i&&i[h]){i[h].apply(null,a)}else{(window.inspoWaiting=window.inspoWaiting||[]).push([h].concat(a))}})(\"\(hook)\",\(args))"
-        guard loaded, let webView else {
-            pending.append(js)
+        guard loaded, let webView, door.isOwn(waiting.held) else {
+            waiting.wait(js, for: page)
             return
         }
         webView.evaluateJavaScript(js)
@@ -84,6 +109,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegat
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         NativeLibraries.shared.stopAll()
+    }
+
+    /// Another page has taken the place of the one the web view held: it
+    /// is the page held from here, and what the bridge had to tell the page
+    /// before is nobody's now.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        waiting.pageChanged(to: PageOrigin(webView.url))
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -120,14 +152,16 @@ final class DesktopBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegat
             }
         }
         loaded = true
-        let waiting = pending
-        pending = []
-        waiting.forEach { webView.evaluateJavaScript($0) }
+        // a page that is not the one the app opens is told nothing: what waits, waits on
+        if door.isOwn(waiting.held) {
+            waiting.take().forEach { webView.evaluateJavaScript($0) }
+        }
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         WorkspaceHelper.shared.page?.line("the page's process ended; the page is loaded again")
         loaded = false
+        waiting.pageChanged(to: nil) // no page is held, and what waited for the page that ended is nobody's
         NativeLibraries.shared.stopAll()
         webView.reload()
     }

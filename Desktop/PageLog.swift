@@ -41,6 +41,14 @@ enum PageLog {
     })();
     """
 
+    /// One line of the page's, kept only where the page that said it is of
+    /// the site the app opens (its own frames among them: Shell/OwnPage.swift);
+    /// another site's page, which a link or a redirect can put in the app
+    /// with the same script in it, has nothing of its kept.
+    static func line(_ body: Any, from page: PageOrigin?, door: PageDoor) -> String? {
+        door.isOwn(page) ? line(body) : nil
+    }
+
     /// One line of the page's, as the file keeps it; nil for what is no such message.
     static func line(_ body: Any) -> String? {
         guard let body = body as? [String: Any], let level = body["level"] as? String, let text = body["text"] as? String else { return nil }
