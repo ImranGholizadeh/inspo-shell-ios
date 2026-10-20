@@ -12,14 +12,19 @@ import SwiftUI
 // Since 13 October 2026 (owner: "I want to use it from an x code build") it
 // opens the workspace instead where Config/Desktop.xcconfig says so
 // (INSPO_DESKTOP_OPENS = workspace): the editor's several engines, started
-// and stopped by the standing scripts (WorkspaceHelper.swift). What it did
-// before is any other word there.
+// and stopped by the standing scripts (WorkspaceHelper.swift). Since 20
+// October 2026 (the owner's shape C, a staging place of Inspo's own) it may
+// open the editor's page at an address instead (INSPO_DESKTOP_OPENS =
+// address, INSPO_DESKTOP_ADDRESS), starting and stopping nothing. What it
+// did before is any other word there.
 @main
 struct DesktopApp: App {
     @NSApplicationDelegateAdaptor(DesktopDelegate.self) var delegate
     @StateObject private var engine = EngineHelper.shared
     @StateObject private var workspace = WorkspaceHelper.shared
-    static let opensWorkspace = DesktopWords.word("InspoOpens") == "workspace"
+    static let opens = Opens(DesktopWords.word)
+    /// The editor's page, the workspace's or one at an address (Opens).
+    static let opensWorkspace = opens.editorsPage
     /// The window's first size, as the config says it (two numbers); the
     /// system keeps the size a person then gives it.
     static let firstSize: CGSize = {

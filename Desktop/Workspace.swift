@@ -37,6 +37,61 @@ enum DesktopWords {
     }
 }
 
+/// What the app opens (INSPO_DESKTOP_OPENS): the workspace, the editor's
+/// engines on this Mac, run by the standing start and stop; a page at an
+/// address (INSPO_DESKTOP_ADDRESS, a staging place: the owner's shape C of
+/// 20 October 2026), opened as it is, with nothing started and nothing
+/// stopped; or, for any other word, what the app did before, its own
+/// bundled engine.
+enum Opens: Equatable {
+    case workspace
+    case address
+    case bundledEngine
+
+    init(_ word: (String) -> String) {
+        switch word("InspoOpens") {
+        case "workspace": self = .workspace
+        case "address": self = .address
+        default: self = .bundledEngine
+        }
+    }
+
+    /// The editor's page, under its cover until its first frame, with a
+    /// launch's folder of logs: the workspace's, and the page at an address.
+    var editorsPage: Bool { self != .bundledEngine }
+    /// Whether a start or a stop is ever run: the workspace's alone.
+    var runsScripts: Bool { self == .workspace }
+}
+
+/// The page at an address the app opens as it is (INSPO_DESKTOP_OPENS =
+/// address): https, or http on this Mac alone (a rehearsal of the deployed
+/// road); never an address that carries a name or a word, which is not said
+/// back.
+struct OpenedAddress {
+    let said: String
+
+    init(_ word: (String) -> String) {
+        said = word("InspoAddress").trimmingCharacters(in: .whitespaces)
+    }
+
+    var url: URL? { fault == nil ? URL(string: said) : nil }
+
+    /// What is wrong with the address, in words for the window; nil when it is opened.
+    var fault: String? {
+        if said.isEmpty { return "INSPO_DESKTOP_ADDRESS says no address to open." }
+        guard let parts = URLComponents(string: said), let scheme = parts.scheme?.lowercased(),
+              let host = parts.host, !host.isEmpty, URL(string: said) != nil else {
+            return "INSPO_DESKTOP_ADDRESS is no address to open: it is https://<host>/ (or http://127.0.0.1:<port>/ on this Mac)."
+        }
+        if parts.user != nil || parts.password != nil {
+            return "INSPO_DESKTOP_ADDRESS holds a name or a word before its host: an address is opened with no sign-in in it (the page asks for one itself)."
+        }
+        if scheme == "https" { return nil }
+        if scheme == "http" && ["127.0.0.1", "localhost", "::1"].contains(host) { return nil }
+        return "INSPO_DESKTOP_ADDRESS is opened over https, or over http on this Mac alone: \(said)"
+    }
+}
+
 /// What the config says of the workspace.
 struct WorkspaceWords {
     var start = ""              // the start script

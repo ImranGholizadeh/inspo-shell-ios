@@ -16,6 +16,8 @@
 	<string>$(INSPO_DESKTOP_DEV_ACCOUNTS)</string>
 	<key>InspoOpens</key>
 	<string>$(INSPO_DESKTOP_OPENS)</string>
+	<key>InspoAddress</key>
+	<string>$(INSPO_DESKTOP_ADDRESS)</string>
 	<key>InspoWorkspaceStart</key>
 	<string>$(INSPO_DESKTOP_WORKSPACE_START)</string>
 	<key>InspoWorkspaceStop</key>

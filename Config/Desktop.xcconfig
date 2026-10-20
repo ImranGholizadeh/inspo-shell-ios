@@ -13,6 +13,11 @@
 // said in the environment of a launch by its own name (a rehearsal on another
 // port and state); a value here holds no space but between its words.
 INSPO_DESKTOP_OPENS = workspace
+// INSPO_DESKTOP_OPENS = address (the owner's shape C, 20 October 2026): the editor's page at the address below, a
+// staging place of Inspo's own (deploy/staging in audit-runner), opened as it is: nothing is started or stopped on this
+// Mac, and nothing is bundled. https, or http on this Mac alone (a rehearsal). In an xcconfig // begins a comment,
+// so the address's // is written /$()/ (an empty word between its two /), and Xcode joins them again.
+INSPO_DESKTOP_ADDRESS = https:/$()/inspo-staging.web.app/
 // the tool that starts and stops the workspace, and where it keeps a start's state
 INSPO_DESKTOP_EDITOR_LOCAL = $(HOME)/Desktop/claude/inspo-context/tools/editor-local
 INSPO_DESKTOP_WORKSPACE_START = $(INSPO_DESKTOP_EDITOR_LOCAL)/open-editor.sh

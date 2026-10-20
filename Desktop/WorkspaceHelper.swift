@@ -36,6 +36,19 @@ final class WorkspaceHelper: ObservableObject {
         app = LogFile(folder + "/app.log")
         page = LogFile(folder + "/page.log")
         say("launch: \(Bundle.main.bundlePath), pid \(ProcessInfo.processInfo.processIdentifier)")
+        // a page at an address is opened as it is: no start, no stop, and
+        // nothing of a workspace on this Mac is looked at (a quit stops
+        // nothing: this launch has no run)
+        if DesktopApp.opens == .address {
+            let at = OpenedAddress(DesktopWords.word)
+            if let fault = at.fault {
+                show(fault)
+                return
+            }
+            say("the page at \(at.said) is opened as it is: nothing is started or stopped")
+            pageURL = at.url
+            return
+        }
         say("the workspace: start \(words.start), stop \(words.stop), port \(words.port)")
         if let fault = words.fault {
             show(fault)

@@ -30,6 +30,24 @@ check("the environment's word is taken before the plist's", DesktopWords.word("I
 check("the plist's word where the environment says none", DesktopWords.word("InspoWorkspacePort", environment: [:]) { _ in "6951" } == "6951")
 check("an empty word in the environment is a word said", DesktopWords.word("InspoWorkspaceAccounts", environment: ["INSPO_DESKTOP_WORKSPACE_ACCOUNTS": ""]) { _ in "/a/file" } == "")
 
+// what the app opens: the workspace, run by its start and stop; a page at
+// an address, opened as it is, with nothing started or stopped (a staging
+// place); any other word, what the app did before
+let opensWords: ([String: String]) -> (String) -> String = { plist in { plist[$0] ?? "" } }
+check("an address's word's name", DesktopWords.name("InspoAddress") == "INSPO_DESKTOP_ADDRESS", DesktopWords.name("InspoAddress"))
+check("the workspace is opened by its scripts", Opens(opensWords(["InspoOpens": "workspace"])) == .workspace && Opens(opensWords(["InspoOpens": "workspace"])).runsScripts)
+check("an address is opened with no script run", Opens(opensWords(["InspoOpens": "address"])) == .address && !Opens(opensWords(["InspoOpens": "address"])).runsScripts)
+check("an address's page is the editor's, under its cover, with a launch's logs", Opens(opensWords(["InspoOpens": "address"])).editorsPage && Opens(opensWords(["InspoOpens": "workspace"])).editorsPage)
+check("any other word is what the app did before", Opens(opensWords(["InspoOpens": "bundled-engine"])) == .bundledEngine && Opens(opensWords([:])) == .bundledEngine && !Opens(opensWords([:])).editorsPage && !Opens(opensWords([:])).runsScripts)
+let staging = OpenedAddress(opensWords(["InspoAddress": " https://staging.example/ "]))
+check("an https address is opened as said", staging.fault == nil && staging.url?.absoluteString == "https://staging.example/", staging.fault ?? "")
+let rehearsal = OpenedAddress(opensWords(["InspoAddress": "http://127.0.0.1:8202/"]))
+check("an http address on this Mac is opened (a rehearsal)", rehearsal.fault == nil && rehearsal.url?.port == 8202, rehearsal.fault ?? "")
+check("http to another machine is not opened", OpenedAddress(opensWords(["InspoAddress": "http://staging.example/"])).url == nil && (OpenedAddress(opensWords(["InspoAddress": "http://staging.example/"])).fault ?? "").contains("https"))
+check("no address said is said", (OpenedAddress(opensWords([:])).fault ?? "").contains("INSPO_DESKTOP_ADDRESS says no address"))
+check("an address with a name and a word in it is not opened, and they are not said back", OpenedAddress(opensWords(["InspoAddress": "https://me:a-word@staging.example/"])).url == nil && !(OpenedAddress(opensWords(["InspoAddress": "https://me:a-word@staging.example/"])).fault ?? "a-word").contains("a-word"))
+check("what is no address is not opened", OpenedAddress(opensWords(["InspoAddress": "staging"])).url == nil && OpenedAddress(opensWords(["InspoAddress": "file:///etc/hosts"])).url == nil)
+
 // stand-in scripts: the start keeps the pid of a process that stays, as the
 // standing start does, and writes the engines' log anew; the stop ends it
 write(tmp + "/start.sh", """

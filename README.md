@@ -505,6 +505,18 @@ has no light).
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
       -project Shell.xcodeproj -scheme Desktop -configuration Debug build
 
+### It opens a page at an address (20 October 2026)
+
+The owner's shape C of 20 October 2026, a staging place of Inspo's own
+(audit-runner `deploy/staging`): with `INSPO_DESKTOP_OPENS = address` the app
+opens the editor's page at `INSPO_DESKTOP_ADDRESS` as it is, under the same
+cover until its first frame and with the same folder of logs a launch of
+the workspace has. It starts nothing and stops nothing (no script is run,
+no workspace on this Mac is looked at, a quit stops nothing), and no engine
+is bundled. An address that is not https (or http on this Mac), or that
+carries a name or a word, is not opened: the window says why.
+`scripts/check-desktop.sh` holds the words.
+
 ### It opens the workspace (13 October 2026)
 
 Owner, 2026-10-13: "I want to use it from an x code build". With
@@ -537,7 +549,8 @@ another port and state:
 
 | word | what it is |
 | --- | --- |
-| `INSPO_DESKTOP_OPENS` | `workspace`, or any other word for what the app did before |
+| `INSPO_DESKTOP_OPENS` | `workspace`; `address` (below); or any other word for what the app did before |
+| `INSPO_DESKTOP_ADDRESS` | with `address`: the editor's page the app opens as it is, a staging place (https, or http on this Mac alone); nothing is started or stopped, and nothing is bundled. In the xcconfig its `//` is written `/$()/` |
 | `INSPO_DESKTOP_EDITOR_LOCAL` | the tool that starts and stops the workspace (used by the words below) |
 | `INSPO_DESKTOP_WORKSPACE_START`, `INSPO_DESKTOP_WORKSPACE_STOP` | the two scripts |
 | `INSPO_DESKTOP_WORKSPACE_PORT`, `INSPO_DESKTOP_WORKSPACE_THING` | the port that answers on 127.0.0.1, and the start's own name for its state |
