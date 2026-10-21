@@ -48,6 +48,10 @@ import UIKit
 //
 //   { kind: "read" | "failedRead" | "failedValidation",
 //     fullName, dateOfBirth, expirationDate, isOver21, isExpired,  (the holder's, when read)
+//     age,                                                         (the holder's whole years on
+//                                                                   the phone's own day, worked
+//                                                                   out here from dateOfBirth;
+//                                                                   none when that is no date)
 //     licenseNumber, sex, postalCode, issuingState,                (the document's own words,
 //                                                                   each when it says it:
 //                                                                   its number; M, F or X;
@@ -219,6 +223,19 @@ final class IDScannerAdapter: NativeLibrary {
         return { item.cancel() }
     }
     var wait = IDScannerAdapter.onMain
+
+    /// The phone's own day, by which a holder's age is counted: the year,
+    /// month and day it is now where the phone is, in the Gregorian
+    /// calendar whatever calendar the phone shows (a phone set to the
+    /// Buddhist one is in its year 2569 in 2026). A check passes the day.
+    static let phoneToday: () -> DateComponents = { day(of: Date(), in: .current) }
+    var today = IDScannerAdapter.phoneToday
+
+    static func day(of date: Date, in zone: TimeZone) -> DateComponents {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        return calendar.dateComponents([.year, .month, .day], from: date)
+    }
 
     init(name: String, scanner: BluetoothIDScanner) {
         self.name = name
@@ -645,7 +662,7 @@ final class IDScannerAdapter: NativeLibrary {
     }
 
     private func send(_ event: ScannerLibraryEvent) {
-        guard let value = Self.flat(event) else { return }
+        guard let value = Self.flat(event, today: today()) else { return }
         sinks.values.forEach { $0(value) }
     }
 
@@ -803,10 +820,10 @@ final class IDScannerAdapter: NativeLibrary {
     }
 
     /// An event as the gene receives it: top-level fields only, a kind first.
-    static func flat(_ event: ScannerLibraryEvent) -> [String: Any]? {
+    static func flat(_ event: ScannerLibraryEvent, today: DateComponents = phoneToday()) -> [String: Any]? {
         switch event {
         case .result(let result):
-            return flat(result)
+            return flat(result, today: today)
         case .duplicate(let result):
             return ["kind": "duplicate", "result": result.kind.rawValue]
         case .battery(let percent):
@@ -881,11 +898,37 @@ final class IDScannerAdapter: NativeLibrary {
     /// no field.
     static let sexes: Set<String> = ["M", "F", "X"]
 
-    static func flat(_ result: ScannerResult) -> [String: Any] {
+    /// A holder's age on a day, in whole years: the years since the birth
+    /// date, one less while that year's birthday is still to come. One born
+    /// on 29 February has it, in a year with none, once 28 February is over.
+    /// The birth date is as the reader gives it: YYYY-MM-DD (the scanner's
+    /// package writes every document's date so, whichever way the document
+    /// wrote it, and writes "" for a date it could not read; the stand-in
+    /// writes it so too). Anything else (no date, a day no calendar has, a
+    /// date in eight digits whose order is not known, a birth after the
+    /// day) is no age: a gene is handed none, never a guessed one.
+    static func age(born written: String, on today: DateComponents) -> Int? {
+        let parts = written.trimmingCharacters(in: .whitespaces).split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+              parts.allSatisfy({ $0.allSatisfy { $0.isASCII && $0.isNumber } }),
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+              let thisYear = today.year, let thisMonth = today.month, let thisDay = today.day else { return nil }
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        let days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        guard (1...12).contains(month), (1...days[month - 1]).contains(day) else { return nil }
+        let toCome = (thisMonth, thisDay) < (month, day)
+        let years = thisYear - year - (toCome ? 1 : 0)
+        return years >= 0 ? years : nil
+    }
+
+    static func flat(_ result: ScannerResult, today: DateComponents = phoneToday()) -> [String: Any] {
         var value: [String: Any] = ["kind": result.kind.rawValue]
         if let holder = result.holder {
             value["fullName"] = holder.fullName
             value["dateOfBirth"] = holder.dateOfBirth
+            // worked out on the phone: a gene that keeps the age alone is
+            // handed no birth date
+            if let age = age(born: holder.dateOfBirth, on: today) { value["age"] = age }
             value["isOver21"] = holder.isOver21
             if let expiry = holder.expirationDate { value["expirationDate"] = expiry }
             if let expired = holder.isExpired { value["isExpired"] = expired }

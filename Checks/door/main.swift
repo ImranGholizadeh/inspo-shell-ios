@@ -74,7 +74,7 @@ do {
 do {
     let reader = StandInReader()
     NativeLibraries.shared.register(IDScannerAdapter(name: "id-reader", scanner: reader))
-    let every = ["kind", "fullName", "dateOfBirth", "expirationDate", "isOver21", "isExpired", "licenseNumber", "sex", "postalCode",
+    let every = ["kind", "fullName", "dateOfBirth", "age", "expirationDate", "isOver21", "isExpired", "licenseNumber", "sex", "postalCode",
                  "issuingState", "issueCode", "scannerId", "state", "paired"]
     let stream: [String: Any] = ["type": "native", "id": "s", "url": "native://id-reader/events", "listen": true, "keep": every]
     let start: [String: Any] = ["type": "native", "id": "r", "url": "native://id-reader/start-reading", "keep": [String]()]

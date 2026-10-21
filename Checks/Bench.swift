@@ -119,6 +119,7 @@ final class Bench {
         self.written = written
         adapter = IDScannerAdapter(name: "id-reader", scanner: scanner)
         adapter.wait = clock.wait
+        adapter.today = { DateComponents(year: 2026, month: 10, day: 21) } // the day a holder's age is counted on
         if stream { open() }
     }
 

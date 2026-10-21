@@ -476,7 +476,7 @@ do {
     scanner.say(.result(one))
     scanner.say(.duplicate(one))
     check("while it reads: the result and its repeat, and nothing more", Array(bench.heard[count...]),
-          ["dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true kind=read",
+          ["age=36 dateOfBirth=1990-01-01 expirationDate=2030-01-01 fullName=Test Person One isExpired=false isOver21=true kind=read",
            "kind=duplicate result=read"])
     _ = bench.call("stop-reading")
     count = bench.heard.count
@@ -597,7 +597,7 @@ do {
     check("and is connected in under a second, with no tap", [bench.call("state")] + last(bench.heard, 1),
           ["battery=90 kind=state paired=1 state=connected", "kind=state paired=1 state=connected"])
     reader.press()
-    check("and scans again", [String(last(bench.heard, 1)[0].hasPrefix("dateOfBirth="))], ["true"])
+    check("and scans again", [String(last(bench.heard, 1)[0].hasPrefix("age=36 dateOfBirth="))], ["true"])
 }
 
 do {
