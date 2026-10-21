@@ -5,6 +5,17 @@
 # the built renderer from inspo-core-js; engine/pages, the pages it may open.
 # Paths come from Config/Desktop.xcconfig.
 set -eu
+# an app that opens the workspace runs the standing start's own engine and
+# page, so none is put inside it (and its build needs neither repository)
+if [ "${INSPO_DESKTOP_OPENS:-}" = workspace ]; then
+  echo "no engine bundled: the app opens the workspace (INSPO_DESKTOP_OPENS = workspace), whose engine is the start's own"
+  exit 0
+fi
+# nor one that opens a page at an address: its engines are the address's own
+if [ "${INSPO_DESKTOP_OPENS:-}" = address ]; then
+  echo "no engine bundled: the app opens the page at INSPO_DESKTOP_ADDRESS (INSPO_DESKTOP_OPENS = address), whose engines are its own"
+  exit 0
+fi
 out="${TARGET_BUILD_DIR:?}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}/engine"
 mkdir -p "$out/pages"
 export PATH="/usr/local/go/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
