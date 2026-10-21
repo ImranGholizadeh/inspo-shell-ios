@@ -3,6 +3,9 @@
 
 import Foundation
 import Security
+#if os(iOS)
+import UIKit
+#endif
 
 // The device's own key, kept by the shell too. The page (inspo-core-js,
 // utils/device-key.js) makes a key once and keeps it in the web view's
@@ -31,13 +34,17 @@ import Security
 //     always said: the Keychain outlives an app's deletion, so the first
 //     start of an install wipes what an earlier install kept, by a mark in
 //     the app's own defaults, which go with the app.
+//   - Before the phone's first unlock after a start the Keychain cannot be
+//     read and the app's defaults read empty: then nothing is read, wiped
+//     or kept, and it is done at the first word after the unlock.
 //   - Nothing of the key is printed or logged.
 
 /// Where the shell keeps the key: the Keychain in the app, a box in a check.
 protocol DeviceKeyPlace: AnyObject {
     func read() -> String?
-    /// Keeps the key; false when it could not be kept.
-    func write(_ key: String) -> Bool
+    /// Keeps the key where none is kept; false when one is kept already
+    /// (it is never written over) or it could not be kept.
+    func add(_ key: String) -> Bool
     func remove()
 }
 
@@ -59,28 +66,63 @@ final class DeviceKeyKept {
     }
 
     private let place: DeviceKeyPlace
+    private let marks: InstallMarks
+    /// Whether the phone's protected data can be read now: not before its
+    /// first unlock after a start, when the Keychain answers nothing and
+    /// the app's defaults read empty.
+    private let available: () -> Bool
+    /// Whether what is kept has been read (and, at an install's first
+    /// start, wiped): done once, when the phone's data can be read.
+    private var settled = false
     /// The key the shell keeps, when it keeps one.
     private(set) var key: String?
 
     /// Reads what is kept; the first start of an install first wipes what
-    /// an earlier install left.
-    init(place: DeviceKeyPlace, marks: InstallMarks) {
+    /// an earlier install left. Before the phone's first unlock neither is
+    /// done: a Keychain that cannot be read would read as none, and
+    /// defaults that read empty as a new install, whose wipe would take
+    /// the phone's key. They are done at the first word after.
+    init(place: DeviceKeyPlace, marks: InstallMarks, available: @escaping () -> Bool) {
         self.place = place
+        self.marks = marks
+        self.available = available
+        _ = settle()
+    }
+
+    /// Reads (and at an install's first start wipes) what is kept, once,
+    /// when the phone's data can be read. True when it has been.
+    func settle() -> Bool {
+        guard !settled else { return true }
+        guard available() else { return false }
+        settled = true
         if !marks.marked {
             place.remove()
             marks.mark()
         }
-        let kept = place.read()
-        key = Self.isKey(kept) ? kept : nil
+        take(place.read())
+        return true
+    }
+
+    private func take(_ kept: String?) {
+        if key == nil, Self.isKey(kept) { key = kept }
     }
 
     /// The page told its key. Kept when the shell keeps none and it is a
-    /// key; true when it was kept now (the scripts a page starts with then
-    /// say it).
+    /// key; one the Keychain holds already is never written over, and is
+    /// taken as the shell's (a read that failed before kept none in
+    /// memory). True when the shell has a key now that it did not have
+    /// (the scripts a page starts with then say it). Before the phone's
+    /// first unlock nothing is kept.
     func told(_ value: Any?) -> Bool {
-        guard key == nil, Self.isKey(value), let text = value as? String, place.write(text) else { return false }
-        key = text
-        return true
+        guard key == nil, settle() else { return false }
+        if key != nil { return true } // read at last: the kept one
+        guard Self.isKey(value), let text = value as? String else { return false }
+        if place.add(text) {
+            key = text
+        } else {
+            take(place.read()) // one is kept already: that one, never the page's
+        }
+        return key != nil
     }
 
     /// The script that says the key to a page as it starts: only to a page
@@ -96,8 +138,16 @@ final class DeviceKeyKept {
         return "(function(p){if(location.origin===p[0]){window.inspoShell=window.inspoShell||{};window.inspoShell.deviceKey=p[1]}})(\(pair));"
     }
 
-    /// The app's own: the Keychain and the app's defaults.
-    static let app = DeviceKeyKept(place: KeychainDeviceKey(), marks: DefaultsInstallMarks())
+    /// The app's own: the Keychain and the app's defaults, read once the
+    /// phone's protected data can be read.
+    static let app = DeviceKeyKept(place: KeychainDeviceKey(), marks: DefaultsInstallMarks(), available: {
+        #if os(iOS)
+        let read = { UIApplication.shared.isProtectedDataAvailable }
+        return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
+        #else
+        return true
+        #endif
+    })
 }
 
 extension PageOrigin {
@@ -126,15 +176,12 @@ final class KeychainDeviceKey: DeviceKeyPlace {
         return String(data: data, encoding: .utf8)
     }
 
-    func write(_ key: String) -> Bool {
+    func add(_ key: String) -> Bool {
         var item = query
         item[kSecValueData as String] = Data(key.utf8)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let added = SecItemAdd(item as CFDictionary, nil)
-        if added == errSecDuplicateItem {
-            return SecItemUpdate(query as CFDictionary, [kSecValueData as String: Data(key.utf8)] as CFDictionary) == errSecSuccess
-        }
-        return added == errSecSuccess
+        // one kept already (errSecDuplicateItem) is never written over
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     func remove() {

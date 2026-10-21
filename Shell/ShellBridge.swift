@@ -100,6 +100,14 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         network.start(queue: DispatchQueue.global(qos: .utility))
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification,
                                                object: nil, queue: .main) { [weak self] _ in self?.again.wake() }
+        // an app started before the phone's first unlock reads the device's
+        // key once the phone is unlocked, and every page from then on is
+        // told it (DeviceKey.swift)
+        NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            guard DeviceKeyKept.app.key == nil, DeviceKeyKept.app.settle(), DeviceKeyKept.app.key != nil else { return }
+            self?.sayKeyFromNowOn()
+        }
         // the first page is loaded when the web view is first laid out in
         // its window: its covered edges are known then, and are said to the
         // page as it starts (CoveredEdges.swift). A web view that is laid
@@ -219,13 +227,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         case "device-key":
             // the page's own key, kept the first time and never replaced:
             // every page that starts from now on is told it (DeviceKey.swift)
-            guard DeviceKeyKept.app.told(body["key"]), let webView else { return }
+            guard DeviceKeyKept.app.told(body["key"]) else { return }
             #if DEBUG
             print("shell: the device's key is kept") // never the key
             #endif
-            let scripts = webView.configuration.userContentController
-            scripts.removeAllUserScripts()
-            Self.pageScripts(edges: edgesSaid).forEach(scripts.addUserScript)
+            sayKeyFromNowOn()
         case "native":
             #if DEBUG
             let endpoint = body["url"] as? String ?? "a stream's stop"
@@ -242,6 +248,14 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         default:
             break
         }
+    }
+
+    /// Every page that starts from now on is told the device's key.
+    private func sayKeyFromNowOn() {
+        guard let webView else { return }
+        let scripts = webView.configuration.userContentController
+        scripts.removeAllUserScripts()
+        Self.pageScripts(edges: edgesSaid).forEach(scripts.addUserScript)
     }
 
     /// A frame's origin, as the web view says it.
