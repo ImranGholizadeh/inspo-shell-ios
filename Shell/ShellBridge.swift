@@ -24,6 +24,9 @@ final class ShellState: ObservableObject {
 // the shell talks to the page through window.inspo, which the page sets
 // (linkOpened, nativeAnswered, nativeFailed, deviceAnswered, deviceFailed),
 // and what arrives before the page is ready waits in window.inspoWaiting.
+// The page tells the shell its device's key ({type: "device-key", key}),
+// which the shell keeps and says to every page as it starts
+// (window.inspoShell.deviceKey, DeviceKey.swift).
 // It says what it does in window.inspoShell.acts (ShellActs.swift), so a
 // page newer or older than this shell knows what to ask of it.
 final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
@@ -120,6 +123,11 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         if let edges {
             scripts.append(WKUserScript(source: Self.said(edges), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
+        // the device's own key, when the shell keeps it, to the build's own
+        // page alone (DeviceKey.swift)
+        if let key = DeviceKeyKept.app.script(own: PageOrigin(shared.startURL)) {
+            scripts.append(WKUserScript(source: key, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         return scripts
     }
 
@@ -128,6 +136,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     }
 
     private var firstLoadAsked = false
+    /// The covered edges every page starts with, once they are known.
+    private var edgesSaid: UIEdgeInsets?
 
     /// Loads the first page, once.
     private func firstLoad() {
@@ -142,6 +152,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
     /// again; and the first page is loaded, if it has not been.
     private func coveredEdges(_ edges: UIEdgeInsets) {
         guard let webView else { return }
+        edgesSaid = edges
         let scripts = webView.configuration.userContentController
         scripts.removeAllUserScripts()
         Self.pageScripts(edges: edges).forEach(scripts.addUserScript)
@@ -205,6 +216,16 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
             } else {
                 HandOver.shared.copy(body, answered: answered, failed: failed)
             }
+        case "device-key":
+            // the page's own key, kept the first time and never replaced:
+            // every page that starts from now on is told it (DeviceKey.swift)
+            guard DeviceKeyKept.app.told(body["key"]), let webView else { return }
+            #if DEBUG
+            print("shell: the device's key is kept") // never the key
+            #endif
+            let scripts = webView.configuration.userContentController
+            scripts.removeAllUserScripts()
+            Self.pageScripts(edges: edgesSaid).forEach(scripts.addUserScript)
         case "native":
             #if DEBUG
             let endpoint = body["url"] as? String ?? "a stream's stop"

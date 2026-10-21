@@ -18,8 +18,9 @@ import Foundation
 enum ShellActs {
     /// The iOS shell's: a haptic's patterns, the long vibration (a haptic of
     /// mode vibrate), the phone's light, the share sheet, the clipboard, and
-    /// a native library's call or stream.
-    static let phone = ["haptic", "vibrate", "torch", "share", "clipboard", "native"]
+    /// a native library's call or stream, and the device's own key kept
+    /// (DeviceKey.swift).
+    static let phone = ["haptic", "vibrate", "torch", "share", "clipboard", "native", "device-key"]
 
     /// The desktop app's: the trackpad's tap for every haptic, and a native
     /// library. A share and a clipboard are the web view's own there.

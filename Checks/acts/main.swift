@@ -13,7 +13,7 @@ func check(_ name: String, _ got: [String], _ want: [String]) {
 }
 
 check("the phone's shell says what it does", [ShellActs.script(ShellActs.phone)],
-      [#"window.inspoShell = { acts: ["haptic","vibrate","torch","share","clipboard","native"] };"#])
+      [#"window.inspoShell = { acts: ["haptic","vibrate","torch","share","clipboard","native","device-key"] };"#])
 check("the desktop app says what it does", [ShellActs.script(ShellActs.desktop)],
       [#"window.inspoShell = { acts: ["haptic","native"] };"#])
 check("a word with a quote in it stays inside its text", [ShellActs.script([#"a"b"#])], [#"window.inspoShell = { acts: ["a\"b"] };"#])
