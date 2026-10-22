@@ -62,6 +62,9 @@ final class ShellBridge: NSObject, WKScriptMessageHandler, WKUIDelegate, WKNavig
         // push: the person's leave, the phone's token and a notification's
         // tap, each when a record's call asks (Push.swift)
         NativeLibraries.shared.register(PhonePush.shared.library)
+        // the saved ban list: a door phone without signal matches a scan
+        // against it (BanKeys.swift)
+        NativeLibraries.shared.register(BanKeysLibrary.app)
         let config = WKWebViewConfiguration()
         // the app's own persistent store: cookies, localStorage and
         // IndexedDB (where Firebase Auth keeps who signed in) outlive the
